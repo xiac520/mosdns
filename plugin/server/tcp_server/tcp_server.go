@@ -17,97 +17,126 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package tcp_server
+ package tcp_server
 
-import (
-	"context"
-	"crypto/tls"
-	"fmt"
-	"net"
-	"strings"
-	"time"
-
-	"github.com/IrineSistiana/mosdns/v5/coremain"
-	"github.com/IrineSistiana/mosdns/v5/pkg/server"
-	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
-	"github.com/IrineSistiana/mosdns/v5/plugin/server/server_utils"
-	"go.uber.org/zap"
-)
-
-const PluginType = "tcp_server"
-
-func init() {
-	coremain.RegNewPluginFunc(PluginType, Init, func() any { return new(Args) })
-}
-
-type Args struct {
-	Entry       string `yaml:"entry"`
-	Listen      string `yaml:"listen"`
-	Cert        string `yaml:"cert"`
-	Key         string `yaml:"key"`
-	IdleTimeout int    `yaml:"idle_timeout"`
-}
-
-func (a *Args) init() {
-	utils.SetDefaultString(&a.Listen, "127.0.0.1:53")
-	utils.SetDefaultNum(&a.IdleTimeout, 10)
-}
-
-type TcpServer struct {
-	args *Args
-
-	l net.Listener
-}
-
-func (s *TcpServer) Close() error {
-	return s.l.Close()
-}
-
-func Init(bp *coremain.BP, args any) (any, error) {
-	return StartServer(bp, args.(*Args))
-}
-
-func StartServer(bp *coremain.BP, args *Args) (*TcpServer, error) {
-	dh, err := server_utils.NewHandler(bp, args.Entry)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init dns handler, %w", err)
-	}
-
-	// Init tls
-	var tc *tls.Config
-	if len(args.Key)+len(args.Cert) > 0 {
-		tc = new(tls.Config)
-		if err := server.LoadCert(tc, args.Cert, args.Key); err != nil {
-			return nil, fmt.Errorf("failed to read tls cert, %w", err)
-		}
-	}
-
-	socketOpt := server_utils.ListenerSocketOpts{
-		SO_REUSEPORT: true,
-		SO_RCVBUF:    64 * 1024,
-	}
-	lc := net.ListenConfig{Control: server_utils.ListenerControl(socketOpt)}
-	listenerNetwork := "tcp"
-	if strings.HasPrefix(args.Listen, "@") {
-		listenerNetwork = "unix"
-	}
-	l, err := lc.Listen(context.Background(), listenerNetwork, args.Listen)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen socket, %w", err)
-	}
-	if tc != nil {
-		l = tls.NewListener(l, tc)
-	}
-	bp.L().Info("tcp server started", zap.Stringer("addr", l.Addr()), zap.Bool("tls", tc != nil))
-
-	go func() {
-		defer l.Close()
-		serverOpts := server.TCPServerOpts{Logger: bp.L(), IdleTimeout: time.Duration(args.IdleTimeout) * time.Second}
-		err := server.ServeTCP(l, dh, serverOpts)
-		bp.M().GetSafeClose().SendCloseSignal(err)
-	}()
-	return &TcpServer{
-		args: args,
-		l:    l,
-	}, nil
-}
+ import (
+	 "context"
+	 "crypto/tls"
+	 "fmt"
+	 "net"
+	 "strings"
+	 "sync"
+	 "time"
+ 
+	 "github.com/IrineSistiana/mosdns/v5/coremain"
+	 "github.com/IrineSistiana/mosdns/v5/pkg/server"
+	 "github.com/IrineSistiana/mosdns/v5/pkg/utils"
+	 "github.com/IrineSistiana/mosdns/v5/plugin/server/server_utils"
+	 "go.uber.org/zap"
+ )
+ 
+ const PluginType = "tcp_server"
+ 
+ func init() {
+	 coremain.RegNewPluginFunc(PluginType, Init, func() any { return new(Args) })
+ }
+ 
+ type Args struct {
+	 Entry       string `yaml:"entry"`
+	 Listen      string `yaml:"listen"`
+	 Cert        string `yaml:"cert"`
+	 Key         string `yaml:"key"`
+	 IdleTimeout int    `yaml:"idle_timeout"`
+ }
+ 
+ func (a *Args) init() {
+	 utils.SetDefaultString(&a.Listen, "127.0.0.1:53")
+	 utils.SetDefaultNum(&a.IdleTimeout, 10)
+ }
+ 
+ type TcpServer struct {
+	 args *Args
+ 
+	 l net.Listener
+ }
+ 
+ func (s *TcpServer) Close() error {
+	 return s.l.Close()
+ }
+ 
+ func Init(bp *coremain.BP, args any) (any, error) {
+	 return StartServer(bp, args.(*Args))
+ }
+ 
+ func StartServer(bp *coremain.BP, args *Args) (*TcpServer, error) {
+	 dh, err := server_utils.NewHandler(bp, args.Entry)
+	 if err != nil {
+		 return nil, fmt.Errorf("failed to init dns handler, %w", err)
+	 }
+ 
+	 // Init tls
+	 var tc *tls.Config
+	 if len(args.Key)+len(args.Cert) > 0 {
+		 tc = new(tls.Config)
+		 if err := server.LoadCert(tc, args.Cert, args.Key); err != nil {
+			 return nil, fmt.Errorf("failed to read tls cert, %w", err)
+		 }
+	 }
+ 
+	 socketOpt := server_utils.ListenerSocketOpts{
+		 SO_REUSEPORT: true,
+		 SO_RCVBUF:    64 * 1024,
+	 }
+	 lc := net.ListenConfig{Control: server_utils.ListenerControl(socketOpt)}
+	 listenerNetwork := "tcp"
+	 if strings.HasPrefix(args.Listen, "@") {
+		 listenerNetwork = "unix"
+	 }
+	 l, err := lc.Listen(context.Background(), listenerNetwork, args.Listen)
+	 if err != nil {
+		 return nil, fmt.Errorf("failed to listen socket, %w", err)
+	 }
+	 if tc != nil {
+		 l = tls.NewListener(l, tc)
+	 }
+	 bp.L().Info("tcp server started", zap.Stringer("addr", l.Addr()), zap.Bool("tls", tc != nil))
+ 
+	 go func() {
+		 defer l.Close()
+		 serverOpts := server.TCPServerOpts{Logger: bp.L(), IdleTimeout: time.Duration(args.IdleTimeout) * time.Second}
+		 err := server.ServeTCP(l, dh, serverOpts)
+		 bp.M().GetSafeClose().SendCloseSignal(err)
+	 }()
+ 
+	 // 使用 sync.WaitGroup 确保所有 Goroutine 完成后再关闭监听器
+	 var wg sync.WaitGroup
+	 wg.Add(1)
+	 go func() {
+		 defer wg.Done()
+		 for {
+			 conn, err := l.Accept()
+			 if err != nil {
+				 if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+					 continue
+				 }
+				 bp.L().Error("failed to accept connection", zap.Error(err))
+				 return
+			 }
+			 go handleConnection(conn, dh, serverOpts)
+		 }
+	 }()
+ 
+	 wg.Wait()
+	 return &TcpServer{
+		 args: args,
+		 l:    l,
+	 }, nil
+ }
+ 
+ func handleConnection(conn net.Conn, dh server.Handler, opts server.TCPServerOpts) {
+	 defer conn.Close()
+	 err := server.ServeTCPConn(conn, dh, opts)
+	 if err != nil {
+		 opts.Logger.Error("failed to serve TCP connection", zap.Error(err))
+	 }
+ }

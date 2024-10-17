@@ -1,22 +1,3 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package fallback
 
 import (
@@ -31,6 +12,7 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"github.com/miekg/dns"
 	"go.uber.org/zap"
+	"sync"
 )
 
 const PluginType = "fallback"
@@ -50,6 +32,7 @@ type fallback struct {
 	secondary            sequence.Executable
 	fastFallbackDuration time.Duration
 	alwaysStandby        bool
+	qCtxPool             *sync.Pool
 }
 
 type Args struct {
@@ -93,6 +76,11 @@ func newFallbackPlugin(bp *coremain.BP, args *Args) (*fallback, error) {
 		secondary:            se,
 		fastFallbackDuration: threshold,
 		alwaysStandby:        args.AlwaysStandby,
+		qCtxPool: &sync.Pool{
+			New: func() any {
+				return query_context.NewContext()
+			},
+		},
 	}
 	return s, nil
 }
@@ -111,19 +99,25 @@ func (f *fallback) doFallback(ctx context.Context, qCtx *query_context.Context) 
 	respChan := make(chan *dns.Msg, 2) // resp could be nil.
 	primFailed := make(chan struct{})
 	primDone := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// primary goroutine.
-	qCtxP := qCtx.Copy()
+	qCtxP := f.qCtxPool.Get().(*query_context.Context)
+	*qCtxP = *qCtx
 	go func() {
-		qCtx := qCtxP
+		defer func() {
+			f.qCtxPool.Put(qCtxP)
+			wg.Done()
+		}()
 		ctx, cancel := makeDdlCtx(ctx, defaultParallelTimeout)
 		defer cancel()
-		err := f.primary.Exec(ctx, qCtx)
+		err := f.primary.Exec(ctx, qCtxP)
 		if err != nil {
 			f.logger.Warn("primary error", qCtx.InfoField(), zap.Error(err))
 		}
 
-		r := qCtx.R()
+		r := qCtxP.R()
 		if err != nil || r == nil {
 			close(primFailed)
 			respChan <- nil
@@ -134,40 +128,47 @@ func (f *fallback) doFallback(ctx context.Context, qCtx *query_context.Context) 
 	}()
 
 	// Secondary goroutine.
-	qCtxS := qCtx.Copy()
+	qCtxS := f.qCtxPool.Get().(*query_context.Context)
+	*qCtxS = *qCtx
 	go func() {
-		timer := pool.GetTimer(f.fastFallbackDuration)
-		defer pool.ReleaseTimer(timer)
+		defer func() {
+			f.qCtxPool.Put(qCtxS)
+			wg.Done()
+		}()
 		if !f.alwaysStandby { // not always standby, wait here.
 			select {
 			case <-primDone: // primary is done, no need to exec this.
 				return
 			case <-primFailed: // primary failed
-			case <-timer.C: // timed out
+			case <-time.After(f.fastFallbackDuration): // timed out
 			}
 		}
 
-		qCtx := qCtxS
 		ctx, cancel := makeDdlCtx(ctx, defaultParallelTimeout)
 		defer cancel()
-		err := f.secondary.Exec(ctx, qCtx)
+		err := f.secondary.Exec(ctx, qCtxS)
 		if err != nil {
 			f.logger.Warn("secondary error", qCtx.InfoField(), zap.Error(err))
 			respChan <- nil
 			return
 		}
 
-		r := qCtx.R()
+		r := qCtxS.R()
 		// always standby is enabled. Wait until secondary resp is needed.
 		if f.alwaysStandby && r != nil {
 			select {
 			case <-ctx.Done():
 			case <-primDone:
 			case <-primFailed: // only send secondary result when primary is failed.
-			case <-timer.C: // or timed out.
+			case <-time.After(f.fastFallbackDuration): // or timed out.
 			}
 		}
 		respChan <- r
+	}()
+
+	go func() {
+		wg.Wait()
+		close(respChan)
 	}()
 
 	for i := 0; i < 2; i++ {
@@ -192,5 +193,5 @@ func makeDdlCtx(ctx context.Context, timeout time.Duration) (context.Context, fu
 	if !ok {
 		ddl = time.Now().Add(timeout)
 	}
-	return context.WithDeadline(context.Background(), ddl)
+	return context.WithDeadline(ctx, ddl)
 }

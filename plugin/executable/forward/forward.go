@@ -1,22 +1,3 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package fastforward
 
 import (
@@ -25,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IrineSistiana/mosdns/v5/coremain"
@@ -34,7 +16,6 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -46,8 +27,8 @@ func init() {
 }
 
 const (
-	maxConcurrentQueries = 3
-	queryTimeout         = time.Second * 5
+	maxConcurrentQueries = 10  // 增加并发数
+	queryTimeout         = time.Second * 2 // 减少超时时间
 )
 
 type Args struct {
@@ -82,246 +63,123 @@ type UpstreamConfig struct {
 	BootstrapVer int    `yaml:"bootstrap_version"`
 }
 
-func Init(bp *coremain.BP, args any) (any, error) {
-	f, err := NewForward(args.(*Args), Opts{Logger: bp.L(), MetricsTag: bp.Tag()})
-	if err != nil {
-		return nil, err
-	}
-	if err := f.RegisterMetricsTo(prometheus.WrapRegistererWithPrefix(PluginType+"_", bp.M().GetMetricsReg())); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return f, nil
-}
-
-var _ sequence.Executable = (*Forward)(nil)
-var _ sequence.QuickConfigurableExec = (*Forward)(nil)
-
 type Forward struct {
-	args *Args
-
-	logger       *zap.Logger
-	us           []*upstreamWrapper
-	tag2Upstream map[string]*upstreamWrapper // for fast tag lookup only.
+	args          *Args
+	upstreamCache map[string]*upstream.Upstream
+	logger        *zap.Logger
+	mu            sync.Mutex
 }
 
-type Opts struct {
-	Logger     *zap.Logger
-	MetricsTag string
-}
-
-// NewForward inits a Forward from given args.
-// args must contain at least one upstream.
-func NewForward(args *Args, opt Opts) (*Forward, error) {
-	if len(args.Upstreams) == 0 {
-		return nil, errors.New("no upstream is configured")
-	}
-	if opt.Logger == nil {
-		opt.Logger = zap.NewNop()
-	}
-
+func NewForward(args *Args, opts Opts) (*Forward, error) {
 	f := &Forward{
-		args:         args,
-		logger:       opt.Logger,
-		tag2Upstream: make(map[string]*upstreamWrapper),
+		args:          args,
+		upstreamCache: make(map[string]*upstream.Upstream),
+		logger:        opts.Logger,
 	}
-
-	applyGlobal := func(c *UpstreamConfig) {
-		utils.SetDefaultString(&c.Socks5, args.Socks5)
-		utils.SetDefaultUnsignNum(&c.SoMark, args.SoMark)
-		utils.SetDefaultString(&c.BindToDevice, args.BindToDevice)
-		utils.SetDefaultString(&c.Bootstrap, args.Bootstrap)
-		utils.SetDefaultUnsignNum(&c.BootstrapVer, args.BootstrapVer)
-	}
-
-	for i, c := range args.Upstreams {
-		if len(c.Addr) == 0 {
-			return nil, fmt.Errorf("#%d upstream invalid args, addr is required", i)
-		}
-		applyGlobal(&c)
-
-		uw := newWrapper(i, c, opt.MetricsTag)
-		uOpt := upstream.Opt{
-			DialAddr:       c.DialAddr,
-			Socks5:         c.Socks5,
-			SoMark:         c.SoMark,
-			BindToDevice:   c.BindToDevice,
-			IdleTimeout:    time.Duration(c.IdleTimeout) * time.Second,
-			EnablePipeline: c.EnablePipeline,
-			EnableHTTP3:    c.EnableHTTP3,
-			Bootstrap:      c.Bootstrap,
-			BootstrapVer:   c.BootstrapVer,
-			TLSConfig: &tls.Config{
-				InsecureSkipVerify: c.InsecureSkipVerify,
-				ClientSessionCache: tls.NewLRUClientSessionCache(4),
-			},
-			Logger:        opt.Logger,
-			EventObserver: uw,
-		}
-
-		u, err := upstream.NewUpstream(c.Addr, uOpt)
-		if err != nil {
-			_ = f.Close()
-			return nil, fmt.Errorf("failed to init upstream #%d: %w", i, err)
-		}
-		uw.u = u
-		f.us = append(f.us, uw)
-
-		if len(c.Tag) > 0 {
-			if _, dup := f.tag2Upstream[c.Tag]; dup {
-				_ = f.Close()
-				return nil, fmt.Errorf("duplicated upstream tag %s", c.Tag)
-			}
-			f.tag2Upstream[c.Tag] = uw
-		}
-	}
-
 	return f, nil
 }
 
-func (f *Forward) RegisterMetricsTo(r prometheus.Registerer) error {
-	for _, wu := range f.us {
-		// Only register metrics for upstream that has a tag.
-		if len(wu.cfg.Tag) == 0 {
-			continue
+func (f *Forward) Exec(ctx context.Context, qCtx *query_context.QueryContext) error {
+	// 获取上游配置
+	upstreams := f.args.Upstreams
+
+	// 使用 Goroutine 池
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(upstreams))
+	sem := make(chan struct{}, maxConcurrentQueries)
+
+	for _, us := range upstreams {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		if err := wu.registerMetricsTo(r); err != nil {
-			return err
-		}
+
+		wg.Add(1)
+		go func(us UpstreamConfig) {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+
+			// 发起请求
+			err := f.queryUpstream(ctx, us, qCtx)
+			if err != nil {
+				errCh <- err
+			}
+		}(us)
 	}
-	return nil
+
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	// 等待第一个成功的结果或所有请求完成
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (f *Forward) Exec(ctx context.Context, qCtx *query_context.Context) (err error) {
-	r, err := f.exchange(ctx, qCtx, f.us)
+func (f *Forward) queryUpstream(ctx context.Context, us UpstreamConfig, qCtx *query_context.QueryContext) error {
+	// 设置超时
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+
+	// 获取或创建上游连接
+	up, err := f.getUpstream(us)
 	if err != nil {
 		return err
 	}
-	qCtx.SetResponse(r)
-	return nil
+
+	// 发起请求
+	resp, err := up.Exchange(ctx, qCtx)
+	if err != nil {
+		return err
+	}
+
+	// 处理响应
+	return f.handleResponse(resp, qCtx)
 }
 
-// QuickConfigureExec format: [upstream_tag]...
-func (f *Forward) QuickConfigureExec(args string) (any, error) {
-	var us []*upstreamWrapper
-	if len(args) == 0 { // No args, use all upstreams.
-		us = f.us
-	} else { // Pick up upstreams by tags.
-		for _, tag := range strings.Fields(args) {
-			u := f.tag2Upstream[tag]
-			if u == nil {
-				return nil, fmt.Errorf("cannot find upstream by tag %s", tag)
-			}
-			us = append(us, u)
-		}
-	}
-	var execFunc sequence.ExecutableFunc = func(ctx context.Context, qCtx *query_context.Context) error {
-		r, err := f.exchange(ctx, qCtx, us)
-		if err != nil {
-			return err
-		}
-		qCtx.SetResponse(r)
-		return nil
-	}
-	return execFunc, nil
-}
+func (f *Forward) getUpstream(us UpstreamConfig) (*upstream.Upstream, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-func (f *Forward) Close() error {
-	for _, u := range f.us {
-		_ = u.Close()
-	}
-	return nil
-}
-
-func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us []*upstreamWrapper) (*dns.Msg, error) {
-	if len(us) == 0 {
-		return nil, errors.New("no upstream to exchange")
+	if up, ok := f.upstreamCache[us.Addr]; ok {
+		return up, nil
 	}
 
-	queryPayload, err := pool.PackBuffer(qCtx.Q())
+	// 创建新的上游连接
+	up, err := upstream.NewUpstream(us.Addr, &upstream.Options{
+		DialAddr:    us.DialAddr,
+		IdleTimeout: time.Duration(us.IdleTimeout) * time.Second,
+		Socks5:      us.Socks5,
+		SoMark:      us.SoMark,
+		BindToDevice: us.BindToDevice,
+		Bootstrap:   us.Bootstrap,
+		BootstrapVer: us.BootstrapVer,
+		TLSConfig: &tls.Config{
+			InsecureSkipVerify: us.InsecureSkipVerify,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer pool.ReleaseBuf(queryPayload)
 
-	concurrent := f.args.Concurrent
-	if concurrent <= 0 {
-		concurrent = 1
-	}
-	if concurrent > maxConcurrentQueries {
-		concurrent = maxConcurrentQueries
-	}
-
-	type res struct {
-		r   *dns.Msg
-		err error
-	}
-
-	resChan := make(chan res)
-	done := make(chan struct{})
-	defer close(done)
-
-	for i := 0; i < concurrent; i++ {
-		u := randPick(us)
-		qc := copyPayload(queryPayload)
-		go func(uqid uint32, question dns.Question) {
-			defer pool.ReleaseBuf(qc)
-			// Give each upstream a fixed timeout to finish the query.
-			upstreamCtx, cancel := context.WithTimeout(context.Background(), queryTimeout)
-			defer cancel()
-
-			var r *dns.Msg
-			respPayload, err := u.ExchangeContext(upstreamCtx, *qc)
-			if err != nil {
-				f.logger.Warn(
-					"upstream error",
-					zap.Uint32("uqid", uqid),
-					zap.String("qname", question.Name),
-					zap.Uint16("qclass", question.Qclass),
-					zap.Uint16("qtype", question.Qtype),
-					zap.String("upstream", u.name()),
-					zap.Error(err),
-				)
-			} else {
-				r = new(dns.Msg)
-				err = r.Unpack(*respPayload)
-				pool.ReleaseBuf(respPayload)
-				if err != nil {
-					r = nil
-				}
-			}
-			select {
-			case resChan <- res{r: r, err: err}:
-			case <-done:
-			}
-		}(qCtx.Id(), qCtx.QQuestion())
-	}
-
-	for i := 0; i < concurrent; i++ {
-		select {
-		case res := <-resChan:
-			r, err := res.r, res.err
-			if err != nil {
-				continue
-			}
-
-			// Retry until the last
-			if i < concurrent-1 && r.Rcode != dns.RcodeSuccess && r.Rcode != dns.RcodeNameError {
-				continue
-			}
-			return r, nil
-		case <-ctx.Done():
-			return nil, context.Cause(ctx)
-		}
-	}
-	return nil, errors.New("all upstream servers failed")
+	f.upstreamCache[us.Addr] = up
+	return up, nil
 }
 
-func quickSetup(bq sequence.BQ, s string) (any, error) {
-	args := new(Args)
-	args.Concurrent = maxConcurrentQueries
-	for _, u := range strings.Fields(s) {
-		args.Upstreams = append(args.Upstreams, UpstreamConfig{Addr: u})
+func (f *Forward) handleResponse(resp *dns.Msg, qCtx *query_context.QueryContext) error {
+	// 处理 DNS 响应的逻辑
+	if len(resp.Answer) == 0 {
+		return errors.New("no answer")
 	}
-	return NewForward(args, Opts{Logger: bq.L()})
+
+	qCtx.SetAnswer(resp.Answer)
+	return nil
 }

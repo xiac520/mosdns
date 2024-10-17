@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/IrineSistiana/mosdns/v5/mlog"
@@ -32,6 +34,12 @@ import (
 	"github.com/miekg/dns"
 	"github.com/spf13/cobra"
 )
+
+var connPool = sync.Pool{
+	New: func() interface{} {
+		return &net.Conn{}
+	},
+}
 
 func newIdleTimeoutCmd() *cobra.Command {
 	return &cobra.Command{
@@ -51,9 +59,9 @@ func newConnReuseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "conn-reuse {tcp|tls}://server_addr[:port]",
 		Args:  cobra.ExactArgs(1),
-		Short: "Check whether this server supports RFC 1035 connection reuse.",
+		Short: "Test connection reuse.",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ProbServerConnectionReuse(args[0]); err != nil {
+			if err := TestConnReuse(args[0]); err != nil {
 				mlog.S().Fatal(err)
 			}
 		},
@@ -61,178 +69,176 @@ func newConnReuseCmd() *cobra.Command {
 	}
 }
 
-func newPipelineCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "pipeline {tcp|tls}://server_addr[:port]",
-		Args:  cobra.ExactArgs(1),
-		Short: "Check whether this server supports RFC 7766 query pipelining.",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := ProbServerPipeline(args[0]); err != nil {
-				mlog.S().Fatal(err)
-			}
-		},
-		DisableFlagsInUseLine: true,
-	}
-}
-
-func getConn(addr string) (net.Conn, error) {
-	tryAddPort := func(addr string, defaultPort int) string {
-		_, _, err := net.SplitHostPort(addr)
-		if err != nil { // no port, add it.
-			return net.JoinHostPort(addr, strconv.Itoa(defaultPort))
-		}
-		return addr
-	}
-
-	protocol, host := utils.SplitSchemeAndHost(addr)
-	if len(protocol) == 0 || len(host) == 0 {
-		return nil, fmt.Errorf("invalid addr %s", addr)
-	}
-
-	switch protocol {
-	case "tcp":
-		host = tryAddPort(host, 53)
-		return net.Dial("tcp", host)
-	case "tls":
-		host = tryAddPort(host, 853)
-		serverName, _, _ := net.SplitHostPort(host)
-		tlsConfig := new(tls.Config)
-		tlsConfig.InsecureSkipVerify = false
-		tlsConfig.ServerName = serverName
-		conn, err := net.Dial("tcp", host)
-		if err != nil {
-			return nil, err
-		}
-		tlsConn := tls.Client(conn, tlsConfig)
-		tlsConn.SetDeadline(time.Now().Add(time.Second * 5))
-		err = tlsConn.Handshake()
-		if err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("tls handshake failed: %v", err)
-		}
-		tlsConn.SetDeadline(time.Time{})
-		return tlsConn, nil
-	default:
-		return nil, fmt.Errorf("invalid protocol %s", protocol)
-	}
-}
-
-func ProbServerConnectionReuse(addr string) error {
-	c, err := getConn(addr)
+func ProbServerTimeout(server string) error {
+	// 解析服务器地址
+	addr, port, err := parseServerAddr(server)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
 
-	conn := dns.Conn{Conn: c}
-	for i := 0; i < 3; i++ {
-		conn.SetDeadline(time.Now().Add(time.Second * 3))
-
-		q := new(dns.Msg)
-		q.SetQuestion("www.cloudflare.com.", dns.TypeA)
-		q.Id = uint16(i)
-
-		mlog.S().Infof("sending msg #%d", i)
-		err = conn.WriteMsg(q)
-		if err != nil {
-			return fmt.Errorf("failed to write #%d probe msg: %v", i, err)
-		}
-		_, err = conn.ReadMsg()
-		if err != nil {
-			return fmt.Errorf("failed to read #%d probe msg response: %v", i, err)
-		}
-		mlog.S().Infof("recevied response #%d", i)
-	}
-
-	mlog.S().Infof("server %s supports RFC 1035 connection reuse", addr)
-	return nil
-}
-
-func ProbServerPipeline(addr string) error {
-	c, err := getConn(addr)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	conn := dns.Conn{Conn: c}
+	// 创建连接
+	conn, err := createConnection(addr, port)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	domains := make([]string, 0)
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	// 发送请求
+	err = sendRequest(conn)
+	if err != nil {
 		return err
 	}
-	domains = append(domains, fmt.Sprintf("%x.com.", b))
-	domains = append(domains, ".")
 
-	for i, d := range domains {
-		conn.SetDeadline(time.Now().Add(time.Second * 3))
-
-		q := new(dns.Msg)
-		q.SetQuestion(d, dns.TypeNS)
-		q.Id = uint16(i)
-
-		err = conn.WriteMsg(q)
-		if err != nil {
-			return fmt.Errorf("failed to write #%d probe msg: %v", i, err)
-		}
+	// 接收响应
+	resp, err := receiveResponse(conn)
+	if err != nil {
+		return err
 	}
 
-	oooPassed := false
-	start := time.Now()
-	for i := range domains {
-		conn.SetDeadline(time.Now().Add(time.Second * 10))
-		m, err := conn.ReadMsg()
-		if err != nil {
-			return fmt.Errorf("failed to read #%d probe msg response: %v", i, err)
-		}
-
-		mlog.S().Infof("#%d response received, latency: %d ms", m.Id, time.Since(start).Milliseconds())
-		if m.Id != uint16(i) {
-			oooPassed = true
-		}
+	// 处理响应
+	if resp == nil {
+		return fmt.Errorf("no response received")
 	}
 
-	if oooPassed {
-		mlog.S().Info("server supports RFC7766 query pipelining")
-	} else {
-		mlog.S().Info("no out-of-order response received in this test, server MAY NOT support RFC7766 query pipelining")
-	}
 	return nil
 }
 
-func ProbServerTimeout(addr string) error {
-	c, err := getConn(addr)
+func TestConnReuse(server string) error {
+	// 解析服务器地址
+	addr, port, err := parseServerAddr(server)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
 
-	conn := dns.Conn{Conn: c}
-	q := new(dns.Msg)
-	q.SetQuestion("www.cloudflare.com.", dns.TypeA)
-	err = conn.WriteMsg(q)
-	if err != nil {
-		return fmt.Errorf("failed to write probe msg: %v", err)
+	// 创建连接池
+	pool := &sync.Pool{
+		New: func() interface{} {
+			conn, err := createConnection(addr, port)
+			if err != nil {
+				mlog.S().Error(err)
+				return nil
+			}
+			return conn
+		},
 	}
 
-	mlog.S().Info("testing server idle timeout, awaiting server closing the connection, this may take a while")
-	start := time.Now()
-	_, err = conn.ReadMsg()
-	if err != nil {
-		return fmt.Errorf("failed to read probe msg response: %v", err)
+	// 并发测试连接复用
+	var wg sync.WaitGroup
+	var successCount int32
+	var failureCount int32
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			conn := pool.Get().(*net.Conn)
+			if conn == nil {
+				atomic.AddInt32(&failureCount, 1)
+				return
+			}
+			defer pool.Put(conn)
+
+			// 发送请求
+			err := sendRequest(conn)
+			if err != nil {
+				atomic.AddInt32(&failureCount, 1)
+				return
+			}
+
+			// 接收响应
+			resp, err := receiveResponse(conn)
+			if err != nil || resp == nil {
+				atomic.AddInt32(&failureCount, 1)
+				return
+			}
+
+			atomic.AddInt32(&successCount, 1)
+		}()
 	}
 
-	for {
-		_, err := conn.ReadMsg()
-		if err != nil {
-			break
-		}
-	}
-	mlog.S().Infof("connection closed by peer, it's idle timeout is %.2f sec", time.Since(start).Seconds())
+	wg.Wait()
+
+	mlog.S().Infof("Success: %d, Failure: %d", successCount, failureCount)
 	return nil
+}
+
+func parseServerAddr(server string) (string, int, error) {
+	// 解析服务器地址和端口
+	parts := strings.Split(server, "://")
+	if len(parts) != 2 {
+		return "", 0, fmt.Errorf("invalid server address format")
+	}
+
+	addrPort := parts[1]
+	addrParts := strings.Split(addrPort, ":")
+	if len(addrParts) == 1 {
+		return addrParts[0], 53, nil
+	}
+
+	port, err := strconv.Atoi(addrParts[1])
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid port number")
+	}
+
+	return addrParts[0], port, nil
+}
+
+func createConnection(addr string, port int) (*net.Conn, error) {
+	// 创建连接
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
+	// 启用 TCP 快速打开
+	tcpAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", addr, port))
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := dialer.Dial("tcp", tcpAddr.String())
+	if err != nil {
+		return nil, err
+	}
+
+	// 启用 TCP 快速打开
+	tcpConn := conn.(*net.TCPConn)
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	tcpConn.SetLinger(0)
+
+	return &conn, nil
+}
+
+func sendRequest(conn *net.Conn) error {
+	// 发送请求
+	req := &dns.Msg{}
+	req.SetQuestion(dns.Fqdn("example.com."), dns.TypeA)
+	req.RecursionDesired = true
+
+	wire, err := req.Pack()
+	if err != nil {
+		return err
+	}
+
+	_, err = (*conn).Write(wire)
+	return err
+}
+
+func receiveResponse(conn *net.Conn) (*dns.Msg, error) {
+	// 接收响应
+	buf := make([]byte, 512)
+	n, err := (*conn).Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := new(dns.Msg)
+	err = resp.Unpack(buf[:n])
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

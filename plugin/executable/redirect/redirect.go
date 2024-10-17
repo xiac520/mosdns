@@ -1,22 +1,3 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package redirect
 
 import (
@@ -25,13 +6,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/IrineSistiana/mosdns/v5/coremain"
 	"github.com/IrineSistiana/mosdns/v5/pkg/matcher/domain"
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
-	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"github.com/miekg/dns"
-	"go.uber.org/zap"
+	"go.ubuntu.com/zap"
 )
 
 const PluginType = "redirect"
@@ -48,7 +31,10 @@ type Args struct {
 }
 
 type Redirect struct {
-	m *domain.MixMatcher[string]
+	m           *domain.MixMatcher[string]
+	cache       map[string]string
+	cacheExpire time.Duration
+	cacheMutex  sync.RWMutex
 }
 
 func Init(bp *coremain.BP, args any) (any, error) {
@@ -68,23 +54,61 @@ func NewRedirect(args *Args) (*Redirect, error) {
 		}
 		return f[0], dns.Fqdn(f[1]), nil
 	}
+
 	m := domain.NewMixMatcher[string]()
 	m.SetDefaultMatcher(domain.MatcherFull)
-	for i, rule := range args.Rules {
-		if err := domain.Load[string](m, rule, parseFunc); err != nil {
-			return nil, fmt.Errorf("failed to load rule #%d %s, %w", i, rule, err)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errChan = make(chan error, 1)
+
+	// Load rules
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, rule := range args.Rules {
+			if err := domain.Load[string](m, rule, parseFunc); err != nil {
+				mu.Lock()
+				errChan <- fmt.Errorf("failed to load rule #%d %s, %w", i, rule, err)
+				mu.Unlock()
+				return
+			}
 		}
+	}()
+
+	// Load files
+	for _, file := range args.Files {
+		wg.Add(1)
+		go func(file string) {
+			defer wg.Done()
+			b, err := os.ReadFile(file)
+			if err != nil {
+				mu.Lock()
+				errChan <- fmt.Errorf("failed to read file %s, %w", file, err)
+				mu.Unlock()
+				return
+			}
+			if err := domain.LoadFromTextReader[string](m, bytes.NewReader(b), parseFunc); err != nil {
+				mu.Lock()
+				errChan <- fmt.Errorf("failed to load file %s, %w", file, err)
+				mu.Unlock()
+				return
+			}
+		}(file)
 	}
-	for i, file := range args.Files {
-		b, err := os.ReadFile(file)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file #%d %s, %w", i, file, err)
-		}
-		if err := domain.LoadFromTextReader[string](m, bytes.NewReader(b), parseFunc); err != nil {
-			return nil, fmt.Errorf("failed to load file #%d %s, %w", i, file, err)
-		}
+
+	wg.Wait()
+	close(errChan)
+
+	if err := <-errChan; err != nil {
+		return nil, err
 	}
-	return &Redirect{m: m}, nil
+
+	return &Redirect{
+		m:           m,
+		cache:       make(map[string]string),
+		cacheExpire: 5 * time.Minute,
+	}, nil
 }
 
 func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next sequence.ChainWalker) error {
@@ -94,7 +118,14 @@ func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next s
 	}
 
 	orgQName := q.Question[0].Name
-	redirectTarget, ok := r.m.Match(orgQName)
+	redirectTarget, ok := r.getCache(orgQName)
+	if !ok {
+		redirectTarget, ok = r.m.Match(orgQName)
+		if ok {
+			r.setCache(orgQName, redirectTarget)
+		}
+	}
+
 	if !ok {
 		return next.ExecNext(ctx, qCtx)
 	}
@@ -103,6 +134,7 @@ func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next s
 	defer func() {
 		q.Question[0].Name = orgQName
 	}()
+
 	err := next.ExecNext(ctx, qCtx)
 	if r := qCtx.R(); r != nil {
 		// Restore original query name.
@@ -113,8 +145,8 @@ func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next s
 		}
 
 		// Insert a CNAME record.
-		newAns := make([]dns.RR, 1, len(r.Answer)+1)
-		newAns[0] = &dns.CNAME{
+		newAns := make([]dns.RR, 0, len(r.Answer)+1)
+		newAns = append(newAns, &dns.CNAME{
 			Hdr: dns.RR_Header{
 				Name:   orgQName,
 				Rrtype: dns.TypeCNAME,
@@ -122,7 +154,7 @@ func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next s
 				Ttl:    1,
 			},
 			Target: redirectTarget,
-		}
+		})
 		newAns = append(newAns, r.Answer...)
 		r.Answer = newAns
 	}
@@ -131,4 +163,25 @@ func (r *Redirect) Exec(ctx context.Context, qCtx *query_context.Context, next s
 
 func (r *Redirect) Len() int {
 	return r.m.Len()
+}
+
+func (r *Redirect) getCache(key string) (string, bool) {
+	r.cacheMutex.RLock()
+	defer r.cacheMutex.RUnlock()
+
+	target, ok := r.cache[key]
+	return target, ok
+}
+
+func (r *Redirect) setCache(key, value string) {
+	r.cacheMutex.Lock()
+	defer r.cacheMutex.Unlock()
+
+	r.cache[key] = value
+	go func() {
+		time.Sleep(r.cacheExpire)
+		r.cacheMutex.Lock()
+		delete(r.cache, key)
+		r.cacheMutex.Unlock()
+	}()
 }

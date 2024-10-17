@@ -1,22 +1,3 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package mark
 
 import (
@@ -25,9 +6,16 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const PluginType = "mark"
+
+var markPool = sync.Pool{
+	New: func() interface{} {
+		return &mark{m: make([]uint32, 0, 8)}
+	},
+}
 
 func init() {
 	sequence.MustRegExecQuickSetup(PluginType, func(_ sequence.BQ, args string) (any, error) {
@@ -65,13 +53,28 @@ func (m *mark) Exec(_ context.Context, qCtx *query_context.Context) error {
 // "uint32_mark" is an uint32 defined as Go syntax for integer literals.
 // e.g. "111", "0b111", "0o111", "0xfff".
 func newMarker(s string) (*mark, error) {
-	var m []uint32
-	for _, ms := range strings.Fields(s) {
-		n, err := strconv.ParseUint(ms, 10, 32)
+	// 从对象池中获取一个 mark 实例
+	m := markPool.Get().(*mark)
+	m.m = m.m[:0] // 重置切片
+
+	// 使用 strings.FieldsFunc 分割字符串
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' '
+	})
+	for _, ms := range fields {
+		// 尝试解析不同进制的整数
+		n, err := strconv.ParseUint(ms, 0, 32)
 		if err != nil {
+			markPool.Put(m) // 将 mark 实例放回对象池
 			return nil, err
 		}
-		m = append(m, uint32(n))
+		m.m = append(m.m, uint32(n))
 	}
-	return &mark{m: m}, nil
+	return m, nil
+}
+
+// Release mark instance back to the pool
+func (m *mark) Release() {
+	m.m = m.m[:0]
+	markPool.Put(m)
 }

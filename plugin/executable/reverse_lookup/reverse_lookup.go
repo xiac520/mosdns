@@ -1,22 +1,3 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package reverselookup
 
 import (
@@ -47,9 +28,9 @@ func init() {
 var _ sequence.RecursiveExecutable = (*ReverseLookup)(nil)
 
 type Args struct {
-	Size      int  `yaml:"size"` // Default is 64*1024
+	Size      int  `yaml:"size"` // 默认值为 64*1024
 	HandlePTR bool `yaml:"handle_ptr"`
-	TTL       int  `yaml:"ttl"` // Default is 7200 (2h)
+	TTL       int  `yaml:"ttl"` // 默认值为 7200 (2小时)
 }
 
 func (a *Args) init() {
@@ -124,8 +105,6 @@ func (p *ReverseLookup) ResponsePTR(q *dns.Msg) *dns.Msg {
 	if p.args.HandlePTR && len(q.Question) > 0 && q.Question[0].Qtype == dns.TypePTR {
 		question := q.Question[0]
 		addr, _ := dnsutils.ParsePTRQName(question.Name)
-		// If we cannot parse this ptr name. Just ignore it and pass query to next node.
-		// PTR standards are a mess.
 		if !addr.IsValid() {
 			return nil
 		}
@@ -149,7 +128,7 @@ func (p *ReverseLookup) ResponsePTR(q *dns.Msg) *dns.Msg {
 }
 
 func (p *ReverseLookup) saveIPs(q, r *dns.Msg) {
-	if r == nil {
+	if r == nil || len(r.Answer) == 0 {
 		return
 	}
 

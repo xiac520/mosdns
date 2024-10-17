@@ -26,6 +26,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
@@ -83,7 +84,7 @@ func QuickSetupFromStr(s string) (sequence.Matcher, error) {
 	case "zl":
 		sm = opZl{}
 	case "eq":
-		m := make(map[string]struct{})
+		m := make(map[string]struct{}, len(args))
 		for _, s := range args {
 			m[s] = struct{}{}
 		}
@@ -140,11 +141,11 @@ func (op opZl) MatchStr(s string) bool {
 }
 
 type opEq struct {
-	m map[string]struct{}
+	m sync.Map
 }
 
 func (op *opEq) MatchStr(s string) bool {
-	_, ok := op.m[s]
+	_, ok := op.m.Load(s)
 	return ok
 }
 

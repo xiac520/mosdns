@@ -42,8 +42,7 @@ type MatchFunc func(qCtx *query_context.Context, m netlist.Matcher) (bool, error
 
 type Matcher struct {
 	match MatchFunc
-
-	mg []netlist.Matcher
+	mg    []netlist.Matcher
 }
 
 func (m *Matcher) Match(_ context.Context, qCtx *query_context.Context) (matched bool, err error) {
@@ -55,15 +54,22 @@ func NewMatcher(bq sequence.BQ, args *Args, f MatchFunc) (m *Matcher, err error)
 		match: f,
 	}
 
+	// Preallocate capacity for mg
+	mgCapacity := len(args.IPSets)
+	if len(args.IPs)+len(args.Files) > 0 {
+		mgCapacity++
+	}
+	m.mg = make([]netlist.Matcher, 0, mgCapacity)
+
 	// Acquire lists from other plugins or files.
 	for _, tag := range args.IPSets {
 		p := bq.M().GetPlugin(tag)
-		provider, _ := p.(data_provider.IPMatcherProvider)
-		if provider == nil {
+		if provider, ok := p.(data_provider.IPMatcherProvider); ok {
+			l := provider.GetIPMatcher()
+			m.mg = append(m.mg, l)
+		} else {
 			return nil, fmt.Errorf("cannot find ipset %s", tag)
 		}
-		l := provider.GetIPMatcher()
-		m.mg = append(m.mg, l)
 	}
 
 	// Anonymous set from plugin's args and files.
@@ -84,15 +90,34 @@ func NewMatcher(bq sequence.BQ, args *Args, f MatchFunc) (m *Matcher, err error)
 // ParseQuickSetupArgs parses expressions and "ip_set"s to args.
 // Format: "([ip] | [$ip_set_tag] | [&ip_list_file])..."
 func ParseQuickSetupArgs(s string) *Args {
-	cutPrefix := func(s string, p string) (string, bool) {
-		if strings.HasPrefix(s, p) {
-			return strings.TrimPrefix(s, p), true
+	cutPrefix := func(s, p string) (string, bool) {
+		if len(s) >= len(p) && s[:len(p)] == p {
+			return s[len(p):], true
 		}
 		return s, false
 	}
 
-	args := new(Args)
-	for _, exp := range strings.Fields(s) {
+	args := &Args{}
+	fields := strings.Fields(s)
+	ipSetCap := 0
+	fileCap := 0
+	ipCap := 0
+
+	for _, exp := range fields {
+		if _, ok := cutPrefix(exp, "$"); ok {
+			ipSetCap++
+		} else if _, ok := cutPrefix(exp, "&"); ok {
+			fileCap++
+		} else {
+			ipCap++
+		}
+	}
+
+	args.IPSets = make([]string, 0, ipSetCap)
+	args.Files = make([]string, 0, fileCap)
+	args.IPs = make([]string, 0, ipCap)
+
+	for _, exp := range fields {
 		if tag, ok := cutPrefix(exp, "$"); ok {
 			args.IPSets = append(args.IPSets, tag)
 		} else if path, ok := cutPrefix(exp, "&"); ok {

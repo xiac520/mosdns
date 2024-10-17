@@ -17,107 +17,109 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package black_hole
+ package black_hole
 
-import (
-	"context"
-	"fmt"
-	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
-	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
-	"github.com/miekg/dns"
-	"net/netip"
-	"strings"
-)
-
-const PluginType = "black_hole"
-
-func init() {
-	sequence.MustRegExecQuickSetup(PluginType, QuickSetup)
-}
-
-var _ sequence.Executable = (*BlackHole)(nil)
-
-type BlackHole struct {
-	ipv4 []netip.Addr
-	ipv6 []netip.Addr
-}
-
-// QuickSetup format: [ipv4|ipv6] ...
-// Support both ipv4/a and ipv6/aaaa families.
-func QuickSetup(_ sequence.BQ, s string) (any, error) {
-	return NewBlackHole(strings.Fields(s))
-}
-
-// NewBlackHole creates a new BlackHole with given ips.
-func NewBlackHole(ips []string) (*BlackHole, error) {
-	b := &BlackHole{}
-	for _, s := range ips {
-		addr, err := netip.ParseAddr(s)
-		if err != nil {
-			return nil, fmt.Errorf("invalid ipv4 addr %s, %w", s, err)
-		}
-		if addr.Is4() {
-			b.ipv4 = append(b.ipv4, addr)
-		} else {
-			b.ipv6 = append(b.ipv6, addr)
-		}
-	}
-	return b, nil
-}
-
-// Exec implements sequence.Executable. It set a response with given ips if
-// query has corresponding qtypes.
-func (b *BlackHole) Exec(_ context.Context, qCtx *query_context.Context) error {
-	if r := b.Response(qCtx.Q()); r != nil {
-		qCtx.SetResponse(r)
-	}
-	return nil
-}
-
-// Response returns a response with given ips if query has corresponding qtypes.
-// Otherwise, it returns nil.
-func (b *BlackHole) Response(q *dns.Msg) *dns.Msg {
-	if len(q.Question) != 1 {
-		return nil
-	}
-
-	qName := q.Question[0].Name
-	qtype := q.Question[0].Qtype
-
-	switch {
-	case qtype == dns.TypeA && len(b.ipv4) > 0:
-		r := new(dns.Msg)
-		r.SetReply(q)
-		for _, addr := range b.ipv4 {
-			rr := &dns.A{
-				Hdr: dns.RR_Header{
-					Name:   qName,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-					Ttl:    300,
-				},
-				A: addr.AsSlice(),
-			}
-			r.Answer = append(r.Answer, rr)
-		}
-		return r
-
-	case qtype == dns.TypeAAAA && len(b.ipv6) > 0:
-		r := new(dns.Msg)
-		r.SetReply(q)
-		for _, addr := range b.ipv6 {
-			rr := &dns.AAAA{
-				Hdr: dns.RR_Header{
-					Name:   qName,
-					Rrtype: dns.TypeAAAA,
-					Class:  dns.ClassINET,
-					Ttl:    300,
-				},
-				AAAA: addr.AsSlice(),
-			}
-			r.Answer = append(r.Answer, rr)
-		}
-		return r
-	}
-	return nil
-}
+ import (
+	 "context"
+	 "fmt"
+	 "github.com/IrineSistiana/mosdns/v5/pkg/query_context"
+	 "github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
+	 "github.com/miekg/dns"
+	 "net/netip"
+	 "strings"
+ )
+ 
+ const PluginType = "black_hole"
+ 
+ func init() {
+	 sequence.MustRegExecQuickSetup(PluginType, QuickSetup)
+ }
+ 
+ var _ sequence.Executable = (*BlackHole)(nil)
+ 
+ type BlackHole struct {
+	 ipv4 []netip.Addr
+	 ipv6 []netip.Addr
+ }
+ 
+ // QuickSetup format: [ipv4|ipv6] ...
+ // Support both ipv4/a and ipv6/aaaa families.
+ func QuickSetup(_ sequence.BQ, s string) (any, error) {
+	 return NewBlackHole(strings.Fields(s))
+ }
+ 
+ // NewBlackHole creates a new BlackHole with given ips.
+ func NewBlackHole(ips []string) (*BlackHole, error) {
+	 b := &BlackHole{}
+	 for _, s := range ips {
+		 addr, err := netip.ParseAddr(s)
+		 if err != nil {
+			 return nil, fmt.Errorf("invalid ipv4 addr %s, %w", s, err)
+		 }
+		 if addr.Is4() {
+			 b.ipv4 = append(b.ipv4, addr)
+		 } else {
+			 b.ipv6 = append(b.ipv6, addr)
+		 }
+	 }
+	 return b, nil
+ }
+ 
+ // Exec implements sequence.Executable. It set a response with given ips if
+ // query has corresponding qtypes.
+ func (b *BlackHole) Exec(_ context.Context, qCtx *query_context.Context) error {
+	 if r := b.Response(qCtx.Q()); r != nil {
+		 qCtx.SetResponse(r)
+	 }
+	 return nil
+ }
+ 
+ // Response returns a response with given ips if query has corresponding qtypes.
+ // Otherwise, it returns nil.
+ func (b *BlackHole) Response(q *dns.Msg) *dns.Msg {
+	 if len(q.Question) != 1 {
+		 return nil
+	 }
+ 
+	 qName := q.Question[0].Name
+	 qtype := q.Question[0].Qtype
+ 
+	 switch {
+	 case qtype == dns.TypeA && len(b.ipv4) > 0:
+		 r := new(dns.Msg)
+		 r.SetReply(q)
+		 r.Answer = make([]dns.RR, 0, len(b.ipv4)) // 预先分配内存
+		 for _, addr := range b.ipv4 {
+			 rr := &dns.A{
+				 Hdr: dns.RR_Header{
+					 Name:   qName,
+					 Rrtype: dns.TypeA,
+					 Class:  dns.ClassINET,
+					 Ttl:    300,
+				 },
+				 A: addr.AsSlice(),
+			 }
+			 r.Answer = append(r.Answer, rr)
+		 }
+		 return r
+ 
+	 case qtype == dns.TypeAAAA && len(b.ipv6) > 0:
+		 r := new(dns.Msg)
+		 r.SetReply(q)
+		 r.Answer = make([]dns.RR, 0, len(b.ipv6)) // 预先分配内存
+		 for _, addr := range b.ipv6 {
+			 rr := &dns.AAAA{
+				 Hdr: dns.RR_Header{
+					 Name:   qName,
+					 Rrtype: dns.TypeAAAA,
+					 Class:  dns.ClassINET,
+					 Ttl:    300,
+				 },
+				 AAAA: addr.AsSlice(),
+			 }
+			 r.Answer = append(r.Answer, rr)
+		 }
+		 return r
+	 }
+	 return nil
+ }

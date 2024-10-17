@@ -1,33 +1,16 @@
-/*
- * Copyright (C) 2020-2022, IrineSistiana
- *
- * This file is part of mosdns.
- *
- * mosdns is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * mosdns is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package base_domain
 
 import (
 	"context"
 	"fmt"
+	"sync"
+	"strings"
+
 	"github.com/IrineSistiana/mosdns/v5/pkg/matcher/domain"
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
 	"github.com/IrineSistiana/mosdns/v5/plugin/data_provider"
 	"github.com/IrineSistiana/mosdns/v5/plugin/data_provider/domain_set"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
-	"strings"
 )
 
 var _ sequence.Matcher = (*Matcher)(nil)
@@ -46,13 +29,46 @@ type Matcher struct {
 }
 
 func (m *Matcher) Match(_ context.Context, qCtx *query_context.Context) (bool, error) {
-	return m.match(qCtx, domain_set.MatcherGroup(m.mg))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var matched bool
+	var firstErr error
+
+	for _, matcher := range m.mg {
+		wg.Add(1)
+		go func(m domain.Matcher[struct{}]) {
+			defer wg.Done()
+			matched, err := m.match(qCtx, m)
+			if err != nil && firstErr == nil {
+				mu.Lock()
+				firstErr = err
+				mu.Unlock()
+			}
+			if matched {
+				mu.Lock()
+				matched = true
+				mu.Unlock()
+			}
+		}(matcher)
+	}
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return false, firstErr
+	}
+
+	return matched, nil
 }
 
 func NewMatcher(bq sequence.BQ, args *Args, f MatchFunc) (m *Matcher, err error) {
 	m = &Matcher{
 		match: f,
 	}
+
+	// 预先分配 mg 的容量
+	totalMatchers := len(args.DomainSets) + (len(args.Exps) + len(args.Files) > 0)
+	m.mg = make([]domain.Matcher[struct{}], 0, totalMatchers)
 
 	// Acquire matchers from other plugins.
 	for _, tag := range args.DomainSets {
