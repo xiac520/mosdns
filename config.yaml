@@ -156,9 +156,6 @@ plugins:
         exec: $reject_ad
       - exec: $cache_wan # cache wan
       - exec: jump has_resp_main
-      - matches: qname $geosite_cn # cn 域名
-        exec: $query_cn
-      - exec: jump has_resp_main
       # 其他
       - exec: $no_ecs
       - exec: $query_fallback
