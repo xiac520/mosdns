@@ -204,12 +204,14 @@ plugins:
     type: sequence
     args:
       - exec: query_summary dns_nocn
+      - exec: $ecs_cn
       - exec: $dns_nocn
 
   - tag: dns_cn_seq
     type: sequence
     args:
       - exec: query_summary dns_cn
+      - exec: $no_ecs
       - exec: $dns_cn
 
   - tag: local_seq
