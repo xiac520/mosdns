@@ -12,7 +12,7 @@ Simple MosDNS 是一个预配置的 MosDNS 服务器 Docker 镜像，旨在为�
 - **DNS 去污染和分流**：使用 `geoip.dat` 和 `geosite.dat` 数据文件实现 DNS 去污染和分流功能，确保国内网站使用国内 DNS 服务器，国外网站使用国外 DNS 服务器。**仅在 `auto` 模式下生效**。
 - **三配置源**：您可以选择自动从 `https://github.com/xiac520/simple-mosdns` 拉取配置文件，或使用用户定义的 GitHub 仓库，或使用用户定义的挂载配置目录。
 
-## 使用方法
+### 使用方法
 
 ### 自动拉取配置文件
 
