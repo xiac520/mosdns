@@ -237,6 +237,11 @@ plugins:
     args:
       - exec: $forward_remote
 
+  - tag: query_cn
+    type: sequence
+    args:
+      - exec: $dns_cn
+
   # Query Fallback
   - tag: query_fallback
     type: sequence
