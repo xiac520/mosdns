@@ -46,6 +46,10 @@ docker run -d --name simple-mosdns -p 53:53/udp -p 53:53/tcp -v /path/to/your/co
 nslookup example.com 127.0.0.1
 ```
 
+## Docker镜像
+
+[Simple MosDNS][https://hub.docker.com/r/xiac520/simple-mosdns](https://hub.docker.com/r/xiac520/simple-mosdns)
+
 ## 基于 MosDNS V5
 
 该镜像基于 MosDNS V5 构建，提供最新的功能和改进。
@@ -54,9 +58,6 @@ nslookup example.com 127.0.0.1
 
 该镜像的规则配置参考了 [MosDNS-Config GitHub 仓库](https://github.com/moreoronce/MosDNS-Config)，确保开箱即用的 DNS 去污染和分流功能。
 
-## Docker镜像
-
-[Simple MosDNS]([https://github.com/moreoronce/MosDNS-Config](https://hub.docker.com/r/xiac520/simple-mosdns)
 
 ## 参考 MosDNS 库
 
