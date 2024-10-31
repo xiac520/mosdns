@@ -1,49 +1,203 @@
-log:
-  level: debug
-  file: "/var/log/mosdns.log"
-
-api:
-  http: "0.0.0.0:8338" # api 监听地址
-
-include:
-  - "/etc/mosdns/dat_exec.yaml"
-  - "/etc/mosdns/dns.yaml"
-
 plugins:
-  - tag: reject_null_domain
+  ################## 数据源 ################
+  - tag: geoip_private # 私网 IP
+    type: ip_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geoip_private.txt"
+  - tag: geoip_cn # 中国 IP
+    type: ip_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geoip_cn.txt"
+
+  - tag: geosite_cn # 中国域名
+    type: domain_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geosite_cn.txt"
+  - tag: geosite_gfw # GFW 域名
+    type: domain_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geosite_gfw.txt"
+  - tag: geosite_location-!cn # 非中国域名
+    type: domain_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geosite_geolocation-!cn.txt"
+  - tag: geosite_ads-all # 广告域名
+    type: domain_set
+    args:
+      files:
+        - "/etc/mosdns/rules/geosite_category-ads-all.txt"
+
+  ################# 可执行插件 ################
+
+  # 缓存 LAN
+  - tag: cache_lan
+    type: cache
+    args:
+      size: 8192
+      lazy_cache_ttl: 86400
+  # 缓存 WAN
+  - tag: cache_wan
+    type: cache
+    args:
+      size: 131072
+      lazy_cache_ttl: 86400
+
+  # 无 ECS 信息
+  - tag: no_ecs
+    type: ecs_handler
+    args:
+      forward: true # 是否转发来自下游的 ECS
+      preset: "" # 发送预设 ECS
+      send: false # 是否发送 ECS
+      mask4: 24
+      mask6: 48 
+  
+  # 附加 ECS CN 信息
+  - tag: ecs_cn
+    type: ecs_handler
+    args:
+      forward: true # 是否转发来自下游的 ECS
+      preset: 45.207.213.35 # 发送预设 ECS
+      send: true # 是否发送 ECS
+      mask4: 24 # IPv4 掩码。默认 24
+      mask6: 48 # IPv6 掩码。默认 48
+
+  # 调整 TTL
+  - tag: ttl_1m
     type: sequence
     args:
-      - exec: query_summary reject_null_domain
-      - exec: $reject_3
-
-  - tag: reject_qtype65
+      - exec: ttl 60
+  - tag: ttl_5m
     type: sequence
     args:
-      - exec: query_summary reject_qtype65
-      - exec: $reject_3
-
-  - tag: reject_ad
+      - exec: ttl 300
+  - tag: ttl_1h
     type: sequence
     args:
-      - exec: query_summary reject_adlist
-      - exec: $reject_3
+      - exec: ttl 3600
 
-  ################ 序列 #################
+  ################# DNS #################
+  # Cloudflare DoH DoT H3
+  - tag: cloudflare
+    type: forward
+    args:
+      concurrent: 3
+      upstreams:
+        - addr: "https://1.1.1.1/dns-query"
+          dial_addr: "1.1.1.1"
+        - addr: "tls://1.1.1.1"
+          dial_addr: "2606:4700:4700::1111"
+          enable_pipeline: true
+        - addr: "tls://1.1.1.1"
+          dial_addr: "1.1.1.1"
+          enable_pipeline: true
+
+  - tag: quad9
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: "https://dns11.quad9.net/dns-query"
+          dial_addr: "149.112.112.112"
+        - addr: "https://dns11.quad9.net/dns-query"
+          dial_addr: "2620:fe::fe"
+        - addr: "tls://dns11.quad9.net"
+          dial_addr: "149.112.112.9"
+          enable_pipeline: true
+        - addr: "tls://dns11.quad9.net"
+          dial_addr: "2620:fe::9"
+          enable_pipeline: true
+
+  - tag: forward_remote
+    type: forward
+    args:
+      concurrent: 3
+      upstreams:
+        - addr: "https://1.1.1.1/dns-query"
+          dial_addr: "1.1.1.1"
+        - addr: "https://dns.quad9.net/dns-query"
+          dial_addr: "9.9.9.9"
+        - addr: "https://1.0.0.1/dns-query"
+          dial_addr: "2606:4700:4700::1111"
+        - addr: "https://unfiltered.adguard-dns.com/dns-query"
+          dial_addr: "1.0.0.1"
+
+  # 阿里 DoH DoT H3
+  - tag: ali
+    type: forward
+    args:
+      concurrent: 3
+      upstreams:
+        - addr: "https://dns.alidns.com/dns-query"
+          dial_addr: "223.6.6.6"
+        - addr: "tls://dns.alidns.com"
+          dial_addr: "2400:3200:baba::1"
+          enable_pipeline: true
+        - addr: "tls://dns.alidns.com"
+          dial_addr: "223.5.5.5"
+          enable_pipeline: true
+        - addr: "https://dns.alidns.com/dns-query"
+          dial_addr: "223.5.5.5"
+          enable_http3: true
+        - addr: "https://dns.alidns.com/dns-query"
+          dial_addr: "2400:3200::1"
+          enable_http3: true
+
+  # DNSPod DoH DoT
+  - tag: dnspod
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: "https://doh.pub/dns-query"
+          dial_addr: "119.29.29.29"
+        - addr: "https://doh.pub/dns-query"
+          dial_addr: "119.28.28.28"
+        - addr: "tls://doh.pub"
+          dial_addr: "119.29.29.29"
+          enable_pipeline: true
+        - addr: "tls://doh.pub"
+          dial_addr: "119.28.28.28"
+          enable_pipeline: true
+
+  # 360 DoH DoT
+  - tag: 360
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: "https://doh.360.cn/dns-query"
+          dial_addr: "101.226.4.6"
+        - addr: "https://doh.360.cn/dns-query"
+          dial_addr: "218.30.118.6"
+        - addr: "tls://doh.360.cn"
+          dial_addr: "101.226.4.6"
+          enable_pipeline: true
+        - addr: "tls://doh.360.cn"
+          dial_addr: "218.30.118.6"
+          enable_pipeline: true
+
+  ################# 序列 #################
   - tag: dns_nocn
     type: "fallback"
     args:
-      primary: cloudflare # 主dns
-      secondary: quad9 # 备用dns
+      primary: cloudflare # 主 DNS
+      secondary: quad9 # 备用 DNS
       threshold: 700 # 无响应切换 毫秒
       always_standby: true # 副可执行插件始终待命
   
-  # dns-cn 序列
+  # DNS-CN 序列
   - tag: dns_cn
     type: "fallback"
     args:
-      primary: ali # 主dns
-      secondary: dnspod # 备用dns
-      threshold: 500
+      primary: ali # 主 DNS
+      secondary: dnspod # 备用 DNS
+      threshold: 700
       always_standby: true # 副可执行插件始终待命
 
   - tag: dns_nocn_seq
@@ -64,13 +218,13 @@ plugins:
       - exec: query_summary local
       - exec: $local
 
-  - tag: fallback_seq # 其他特殊情况统一使用 dns_cn 处理
+  - tag: fallback_seq # 其他特殊情况统一使用 DNS-CN 处理
     type: sequence
     args:
       - exec: query_summary fallback
       - exec: $dns_cn
 
-  - tag: other_seq # 其他特殊情况统一使用 dns_cn 处理
+  - tag: other_seq # 其他特殊情况统一使用 DNS-CN 处理
     type: sequence
     args:
       - exec: query_summary other
@@ -81,58 +235,55 @@ plugins:
     args:
       - exec: $forward_remote
 
-  # query fallback
+  # Query Fallback
   - tag: query_fallback
     type: sequence
     args:
-      # - exec: $ecs-cn
       - exec: prefer_ipv4
       - exec: $fallback_seq
 
-  # query lan
+  # Query LAN
   - tag: query_lan
     type: sequence
     args:
       - exec: $cache_lan
-      - matches: has_resp # 命中了 lan cache
+      - matches: has_resp # 命中了 LAN Cache
         exec: return
-      # - exec: $no_ecs
       - exec: $local_seq
 
   # 其他所有情况
   - tag: query_other 
     type: sequence
     args:
-      # - exec: $no_ecs 
       - exec: $other_seq
 
   - tag: pre_handle
     type: sequence
     args:
-      - exec: $ttl_1h # ttl 1h
+      - exec: $ttl_1h # TTL 1h
       - exec: accept # 接受响应,终止流程
 
   - tag: main_handle
     type: sequence
     args:
-      - exec: $ttl_5m # ttl 5min
+      - exec: $ttl_5m # TTL 5min
       - exec: accept # 接受响应,终止流程
 
-  # pre_sequence 结果处理 
+  # Pre Sequence 结果处理 
   - tag: has_resp_pre
     type: sequence
     args:
-      - matches: has_resp # 如果 pre 序列已有响应
+      - matches: has_resp # 如果 Pre 序列已有响应
         exec: goto pre_handle
 
-  # main_sequence 结果处理
+  # Main Sequence 结果处理
   - tag: has_resp_main
     type: sequence
     args:
       - matches: has_resp
         exec: goto main_handle
 
-  # pre_sequence
+  # Pre Sequence
   - tag: pre_sequence
     type: sequence
     args:
@@ -144,17 +295,17 @@ plugins:
         exec: $query_other
       - matches: qtype 255 # TYPE 255 类型|DNS服务器拓展支持
         exec: $query_other
-      - matches: ptr_ip $geoip_private # private ip
+      - matches: ptr_ip $geoip_private # Private IP
         exec: $query_lan
       - exec: jump has_resp_pre
 
-  # main_sequence
+  # Main Sequence
   - tag: main_sequence
     type: sequence
     args:
-      - matches: qname $geosite_ads-all # ad 域名
+      - matches: qname $geosite_ads-all # 广告域名
         exec: $reject_ad
-      - exec: $cache_wan # cache wan
+      - exec: $cache_wan # Cache WAN
       - exec: jump has_resp_main
       # 其他
       - exec: $no_ecs
@@ -168,7 +319,7 @@ plugins:
       - exec: $pre_sequence # 预处理
       - exec: $main_sequence # 主执行序列
 
-  # 在同一端口启动 udp 和 tcp 服务器。
+  # 在同一端口启动 UDP 和 TCP 服务器。
   - type: udp_server
     args:
       entry: sequence
