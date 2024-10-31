@@ -10,7 +10,7 @@ plugins:
           dial_addr: "1.1.1.1"
 
         - addr: "tls://1.1.1.1"
-          dial_addr: "1.1.1.1"
+          dial_addr: "2606:4700:4700::1111"
           enable_pipeline: true # TCP/DoT 启用 RFC 7766 新的 query pipelining 连接复用模式
         - addr: "tls://1.1.1.1"
           dial_addr: "1.1.1.1"
@@ -22,15 +22,15 @@ plugins:
       concurrent: 2
       upstreams:
         - addr: "https://dns11.quad9.net/dns-query"
-          dial_addr: "9.9.9.11"
+          dial_addr: "149.112.112.112"
         - addr: "https://dns11.quad9.net/dns-query"
-          dial_addr: "2620:fe::11"
+          dial_addr: "2620:fe::fe"
 
         - addr: "tls://dns11.quad9.net"
-          dial_addr: "9.9.9.11"
+          dial_addr: "149.112.112.9"
           enable_pipeline: true
         - addr: "tls://dns11.quad9.net"
-          dial_addr: "2620:fe::11"
+          dial_addr: "2620:fe::9"
           enable_pipeline: true
 
   - tag: forward_remote
@@ -39,13 +39,13 @@ plugins:
       concurrent: 3
       upstreams:
         - addr: "https://1.1.1.1/dns-query"
-          dial_addr: "223.5.5.5"
+          dial_addr: "1.1.1.1"
         - addr: "https://dns.quad9.net/dns-query"
-          dial_addr: "119.29.29.29"
+          dial_addr: "9.9.9.9"
         - addr: "https://1.0.0.1/dns-query"
-          dial_addr: "2400:3200::1"
+          dial_addr: "2606:4700:4700::1111"
         - addr: "https://unfiltered.adguard-dns.com/dns-query"
-          dial_addr: "223.5.5.5"
+          dial_addr: "1.0.0.1"
 
   # ali doh dot h3
   - tag: ali
