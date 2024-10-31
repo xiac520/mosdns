@@ -32,8 +32,8 @@ plugins:
   - tag: dns_nocn
     type: "fallback"
     args:
-      primary: quad9 # 主dns
-      secondary: nextdns # 备用dns
+      primary: cloudflare # 主dns
+      secondary: quad9 # 备用dns
       threshold: 700 # 无响应切换 毫秒
       always_standby: true # 副可执行插件始终待命
   
