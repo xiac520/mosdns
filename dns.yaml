@@ -38,8 +38,9 @@ plugins:
     args:
       concurrent: 1
       upstreams:
-        - addr: "https://1.1.1.1/dns-query"
-          dial_addr: "1.1.1.1"
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "223.5.5.5"
+
   # ali doh dot h3
   - tag: ali
     type: forward
