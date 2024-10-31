@@ -5,6 +5,7 @@ plugins:
     args:
       files:
         - "/etc/mosdns/rules/geoip_private.txt"
+        - "/etc/mosdns/rules/usr_private.txt"
   - tag: geoip_cn # cn ip
     type: ip_set
     args:
