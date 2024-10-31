@@ -64,7 +64,7 @@ plugins:
   - tag: no_ecs
     type: "ecs_handler"
     args:
-      forward: false # 是否转发来自下游的 ecs
+      forward: true # 是否转发来自下游的 ecs
       preset: "" # 发送预设 ecs
       send: false # 是否发送 ecs
       mask4: 24
