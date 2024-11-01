@@ -27,7 +27,7 @@ plugins:
     args:
       primary: cloudflare # 主dns
       secondary: quad9 # 备用dns
-      threshold: 700 # 无响应切换 毫秒
+      threshold: 500 # 无响应切换 毫秒
       always_standby: true # 副可执行插件始终待命
   
   # dns-cn 序列
@@ -91,13 +91,13 @@ plugins:
   - tag: query_gfw
     type: sequence
     args:
-      - exec: $cloudflare
+      - exec: $dns_nocn
 
   # query fallback
   - tag: query_fallback
     type: sequence
     args:
-      # - exec: $ecs-cn
+      - exec: $ecs-cn
       - exec: prefer_ipv4
       - exec: $fallback_seq
 
@@ -108,14 +108,14 @@ plugins:
       - exec: $cache_lan
       - matches: has_resp # 命中了 lan cache
         exec: return
-      # - exec: $no_ecs
+      - exec: $no_ecs
       - exec: $local_seq
 
   # 其他所有情况
   - tag: query_other 
     type: sequence
     args:
-      # - exec: $no_ecs 
+      - exec: $no_ecs 
       - exec: $other_seq
 
   - tag: pre_handle
