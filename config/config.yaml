@@ -222,12 +222,6 @@ plugins:
       - exec: $ttl_5m
       - exec: accept
 
-  - tag: has_resp_pre
-    type: sequence
-    args:
-      - matches: has_resp
-        exec: goto pre_handle
-
   # pre_sequence 结果处理 
   - tag: has_resp_pre
     type: sequence
