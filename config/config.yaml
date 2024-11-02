@@ -18,32 +18,10 @@ plugins:
         - addr: "udp://180.184.1.1"
         - addr: "udp://180.184.2.2"
 
-  - tag: quad9
-    type: forward
-    args:
-      concurrent: 1  # 减少并发查询数
-      upstreams:
-        - addr: "udp://9.9.9.10"
-        - addr: "udp://149.112.112.10"
-
-  - tag: cleanbrowsing
-    type: forward
-    args:
-      concurrent: 1  # 减少并发查询数
-      upstreams:
-        - addr: "udp://185.228.168.168"
-        - addr: "udp://185.228.169.168"
-
-  - tag: cache_lan
+  - tag: cache
     type: cache
     args:
       size: 8192
-      lazy_cache_ttl: 86400
-
-  - tag: cache_wan
-    type: cache
-    args:
-      size: 131072
       lazy_cache_ttl: 86400
 
   - tag: ecs
@@ -56,16 +34,8 @@ plugins:
       mask6: 48
 
   ################# DNS #################
-  - tag: dns_nocn
-    type: fallback
-    args:
-      primary: cleanbrowsing
-      secondary: quad9
-      threshold: 500
-      always_standby: true
-
   - tag: dns_cn
-    type: fallback
+    type: forward
     args:
       primary: alidnsdnspod
       secondary: trafficroute
@@ -75,9 +45,9 @@ plugins:
   - tag: dns
     type: fallback
     args:
-      primary: dns_cn
-      secondary: dns_nocn
-      threshold: 200
+      primary: cache
+      secondary: dns_cn
+      threshold: 5
       always_standby: true
 
   # 在同一端口启动 udp 和 tcp 服务器。
