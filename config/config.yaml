@@ -1,5 +1,4 @@
 # 插件列表
-plugins:
   ################ DNS #################
   - tag: dns_nocn
     type: "fallback"
