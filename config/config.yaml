@@ -191,8 +191,8 @@ plugins:
   - type: udp_server
     args:
       entry: sequence
-      listen: :5333
+      listen: :53
   - type: tcp_server
     args:
       entry: sequence
-      listen: :5333
+      listen: :53
