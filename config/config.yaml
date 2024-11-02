@@ -166,13 +166,6 @@ plugins:
       - exec: query_summary other
       - exec: $dns_cn
 
-  - tag: sequence
-    type: sequence
-    args:
-      - exec: metrics_collector metrics
-      - exec: $pre_sequence
-      - exec: $main_sequence
-
   - tag: query_cn
     type: sequence
     args:
@@ -287,6 +280,13 @@ plugins:
       - exec: $no_ecs
       - exec: $query_fallback
       - exec: jump has_resp_main
+
+  - tag: sequence
+    type: sequence
+    args:
+      - exec: metrics_collector metrics
+      - exec: $pre_sequence
+      - exec: $main_sequence
 
   # 在同一端口启动 udp 和 tcp 服务器。
   - type: udp_server
