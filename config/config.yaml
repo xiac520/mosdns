@@ -1,3 +1,4 @@
+plugins:
 ################ DNS #################
 - tag: dns_nocn
   type: fallback
