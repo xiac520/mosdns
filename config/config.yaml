@@ -235,12 +235,65 @@ plugins:
       - matches: has_resp
         exec: goto pre_handle
 
+  # pre_sequence 结果处理 
+  - tag: has_resp_pre
+    type: sequence
+    args:
+      - matches: has_resp # 如果 pre 序列已有响应
+        exec: goto pre_handle
+
   # main_sequence 结果处理
   - tag: has_resp_main
     type: sequence
     args:
       - matches: has_resp
         exec: goto main_handle
+
+  # pre_sequence
+  - tag: pre_sequence
+    type: sequence
+    args:
+      - matches: qtype 65 # TYPE 65 类型|DNS服务器状态
+        exec: $reject_qtype65
+      - matches: "qname keyword::" # 无效域名
+        exec: $reject_null_domain
+      - matches: qtype 12 # TYPE 12 类型|反查域名 PTR 记录
+        exec: $query_other
+      - matches: qtype 255 # TYPE 255 类型|DNS服务器拓展支持
+        exec: $query_other
+      - matches: ptr_ip $geoip_private # private ip
+        exec: $query_lan
+      - exec: jump has_resp_pre
+
+  # main_sequence
+  - tag: main_sequence
+    type: sequence
+    args:
+      - matches: qname $geosite_ads-all # ad 域名
+        exec: $reject_ad
+      - exec: $cache_wan # cache wan
+      - exec: jump has_resp_main
+      - matches: qname $geosite_cn # cn 域名
+        exec: $query_cn
+      - exec: jump has_resp_main
+      # 检查是否符合GFW域名规则
+      - matches: qname $geosite_gfw
+        exec: $query_gfw
+      - exec: jump has_resp_main
+      - matches: qname $geosite_location-!cn # 非 cn 域名
+        exec: $query_nocn
+      - exec: jump has_resp_main
+      # 其他
+      - exec: $no_ecs
+      - exec: $query_fallback
+      - exec: jump has_resp_main
+
+  - tag: sequence
+    type: sequence
+    args:
+      - exec: metrics_collector metrics
+      - exec: $pre_sequence # 预处理
+      - exec: $main_sequence # 主执行序列
 
   # 在同一端口启动 udp 和 tcp 服务器。
   - type: udp_server
