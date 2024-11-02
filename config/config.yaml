@@ -124,7 +124,7 @@ plugins:
     args:
       primary: quad9opendns
       secondary: verisign
-      threshold: 400
+      threshold: 700
       always_standby: true
 
   - tag: dns_cn
@@ -132,7 +132,7 @@ plugins:
     args:
       primary: alidnsdnspod
       secondary: 360trafficroute
-      threshold: 100
+      threshold: 200
       always_standby: true
 
   ################# 执行策略 ################
