@@ -69,45 +69,36 @@ plugins:
   - tag: alidnsdnspod
     type: forward
     args:
-      concurrent: 3  # 减少并发查询数
+      concurrent: 2  # 减少并发查询数
       upstreams:
         - addr: "udp://223.5.5.5"
         - addr: "udp://223.6.6.6"
-        - addr: "udp://2400:3200::1"
-        - addr: "udp://2400:3200:baba::1"
         - addr: "udp://119.29.29.29"
         - addr: "udp://119.28.28.28"
 
-  - tag: 360trafficroute
+  - tag: trafficroute
     type: forward
     args:
-      concurrent: 2  # 减少并发查询数
+      concurrent: 1  # 减少并发查询数
       upstreams:
-        - addr: "udp://101.226.4.6"
-        - addr: "udp://123.125.81.6"
-        - addr: "udp://218.30.118.6"
-        - addr: "udp://140.207.198.6"
         - addr: "udp://180.184.1.1"
         - addr: "udp://180.184.2.2"
 
   - tag: quad9
     type: forward
     args:
-      concurrent: 2  # 减少并发查询数
+      concurrent: 1  # 减少并发查询数
       upstreams:
         - addr: "udp://9.9.9.10"
         - addr: "udp://149.112.112.10"
-        - addr: "udp://2620:fe::10"
 
   - tag: cleanbrowsing
     type: forward
     args:
-      concurrent: 3  # 减少并发查询数
+      concurrent: 1  # 减少并发查询数
       upstreams:
         - addr: "udp://185.228.168.168"
         - addr: "udp://185.228.169.168"
-        - addr: "udp://2a0d:2a00:1::"
-        - addr: "udp://2a0d:2a00:2::"
 
   ################# DNS #################
   - tag: dns_nocn
@@ -122,7 +113,7 @@ plugins:
     type: fallback
     args:
       primary: alidnsdnspod
-      secondary: 360trafficroute
+      secondary: trafficroute
       threshold: 300
       always_standby: true
 
