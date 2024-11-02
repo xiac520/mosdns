@@ -69,7 +69,8 @@ plugins:
   - tag: alidnsdnspod
     type: forward
     args:
-      concurrent: 3
+      concurrent: 2  # 减少并发查询数
+      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "udp://223.5.5.5"
         - addr: "udp://223.6.6.6"
@@ -81,7 +82,8 @@ plugins:
   - tag: 360trafficroute
     type: forward
     args:
-      concurrent: 3
+      concurrent: 2  # 减少并发查询数
+      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "udp://101.226.4.6"
         - addr: "udp://123.125.81.6"
@@ -93,19 +95,21 @@ plugins:
   - tag: quad9
     type: forward
     args:
-      concurrent: 2
+      concurrent: 2  # 减少并发查询数
+      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "https://dns10.quad9.net/dns-query"
           dial_addr: "9.9.9.10"
         - addr: "https://dns10.quad9.net/dns-query"
           dial_addr: "149.112.112.10"
-        - addr: "tls://dns11.quad9.net"
+        - addr: "https://dns10.quad9.net/dns-query"
           dial_addr: "2620:fe::10"
 
   - tag: cleanbrowsing
     type: forward
     args:
-      concurrent: 3
+      concurrent: 2  # 减少并发查询数
+      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           dial_addr: "185.228.168.168"
