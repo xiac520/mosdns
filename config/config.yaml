@@ -1,80 +1,41 @@
 plugins:
-################ DNS #################
-- tag: dns_nocn
-  type: fallback
+################# 预加载插件 ################
+- tag: ttl_1m
+  type: sequence
   args:
-    primary: quad9opendns
-    secondary: verisign
-    threshold: 400
-    always_standby: true
+    - exec: ttl 60
 
-plugins:
-- tag: dns_cn
-  type: fallback
+- tag: ttl_5m
+  type: sequence
   args:
-    primary: alidnsdnspod
-    secondary: 360trafficroute
-    threshold: 100
-    always_standby: true
+    - exec: ttl 300
 
-plugins:
-- tag: alidnsdnspod
-  type: forward
+- tag: ttl_1h
+  type: sequence
   args:
-    concurrent: 3
-    upstreams:
-      - addr: 'udp://223.5.5.5:53'
-      - addr: 'udp://223.6.6.6:53'
-      - addr: 'udp://2400:3200::1:53'
-      - addr: 'udp://2400:3200:baba::1:53'
-      - addr: 'udp://119.29.29.29:53'
-      - addr: 'udp://119.28.28.28:53'
+    - exec: ttl 3600
 
-plugins:
-- tag: 360trafficroute
-  type: forward
+- tag: ecs
+  type: ecs_handler
   args:
-    concurrent: 3
-    upstreams:
-      - addr: 'udp://101.226.4.6:53'
-      - addr: 'udp://123.125.81.6:53'
-      - addr: 'udp://218.30.118.6:53'
-      - addr: 'udp://140.207.198.6:53'
-      - addr: 'udp://180.184.1.1:53'
-      - addr: 'udp://180.184.2.2:53'
+    forward: true
+    preset: 45.207.213.35
+    send: false
+    mask4: 24
+    mask6: 48
 
-plugins:
-- tag: quad9opendns
-  type: forward
+- tag: cache_lan
+  type: cache
   args:
-    concurrent: 3
-    upstreams:
-      - addr: 'https://dns9.quad9.net/dns-query'
-        dial_addr: 149.112.112.9
-      - addr: 'https://dns9.quad9.net/dns-query'
-        dial_addr: '2620:fe::fe:9'
-      - addr: 'https://doh.opendns.com/dns-query'
-        dial_addr: 208.67.220.222
-      - addr: 'https://dns9.quad9.net/dns-query'
-        dial_addr: '2620:119:53::53'
+    size: 8192
+    lazy_cache_ttl: 86400
 
-plugins:
-- tag: verisign
-  type: forward
+- tag: cache_wan
+  type: cache
   args:
-    concurrent: 3
-    upstreams:
-      - addr: 'https://dns.verisign.com/dns-query'
-        dial_addr: 64.6.64.6
-      - addr: 'https://dns.verisign.com/dns-query'
-        dial_addr: 64.6.65.6
-      - addr: 'https://dns.verisign.com/dns-query'
-        dial_addr: '2620:74:1c::2:2'
-      - addr: 'https://dns.verisign.com/dns-query'
-        dial_addr: '2620:74:1b::1:1'
+    size: 131072
+    lazy_cache_ttl: 86400
 
-plugins:
-################## 数据源 ################
 - tag: geoip_cn
   type: ip_set
   args:
@@ -105,48 +66,75 @@ plugins:
     files:
       - /etc/mosdns/rules/geosite_category-ads-all.txt
 
-plugins:
-################# 可执行插件 ################
-- tag: cache_lan
-  type: cache
+- tag: alidnsdnspod
+  type: forward
   args:
-    size: 8192
-    lazy_cache_ttl: 86400
+    concurrent: 3
+    upstreams:
+      - addr: 'udp://223.5.5.5:53'
+      - addr: 'udp://223.6.6.6:53'
+      - addr: 'udp://2400:3200::1:53'
+      - addr: 'udp://2400:3200:baba::1:53'
+      - addr: 'udp://119.29.29.29:53'
+      - addr: 'udp://119.28.28.28:53'
 
-plugins:
-- tag: cache_wan
-  type: cache
+- tag: 360trafficroute
+  type: forward
   args:
-    size: 131072
-    lazy_cache_ttl: 86400
+    concurrent: 3
+    upstreams:
+      - addr: 'udp://101.226.4.6:53'
+      - addr: 'udp://123.125.81.6:53'
+      - addr: 'udp://218.30.118.6:53'
+      - addr: 'udp://140.207.198.6:53'
+      - addr: 'udp://180.184.1.1:53'
+      - addr: 'udp://180.184.2.2:53'
 
-plugins:
-- tag: ecs
-  type: ecs_handler
+- tag: quad9opendns
+  type: forward
   args:
-    forward: true
-    preset: 45.207.213.35
-    send: false
-    mask4: 24
-    mask6: 48
+    concurrent: 3
+    upstreams:
+      - addr: 'https://dns9.quad9.net/dns-query'
+        dial_addr: 149.112.112.9
+      - addr: 'https://dns9.quad9.net/dns-query'
+        dial_addr: '2620:fe::fe:9'
+      - addr: 'https://doh.opendns.com/dns-query'
+        dial_addr: 208.67.220.222
+      - addr: 'https://dns9.quad9.net/dns-query'
+        dial_addr: '2620:119:53::53'
 
-plugins:
-- tag: ttl_1m
-  type: sequence
+- tag: verisign
+  type: forward
   args:
-    - exec: ttl 60
+    concurrent: 3
+    upstreams:
+      - addr: 'https://dns.verisign.com/dns-query'
+        dial_addr: 64.6.64.6
+      - addr: 'https://dns.verisign.com/dns-query'
+        dial_addr: 64.6.65.6
+      - addr: 'https://dns.verisign.com/dns-query'
+        dial_addr: '2620:74:1c::2:2'
+      - addr: 'https://dns.verisign.com/dns-query'
+        dial_addr: '2620:74:1b::1:1'
 
-- tag: ttl_5m
-  type: sequence
+################ DNS #################
+- tag: dns_nocn
+  type: fallback
   args:
-    - exec: ttl 300
+    primary: quad9opendns
+    secondary: verisign
+    threshold: 400
+    always_standby: true
 
-- tag: ttl_1h
-  type: sequence
+- tag: dns_cn
+  type: fallback
   args:
-    - exec: ttl 3600
+    primary: alidnsdnspod
+    secondary: 360trafficroute
+    threshold: 100
+    always_standby: true
 
-plugins:
 ################# 执行策略 ################
 - tag: reject_null_domain
   type: sequence
