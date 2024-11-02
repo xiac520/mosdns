@@ -49,20 +49,11 @@ plugins:
   - tag: ecs
     type: ecs_handler
     args:
-      forward: false
+      forward: true
       preset: 45.207.213.35
       send: false
       mask4: 24
       mask6: 48
-
-  ################# DNS #################
-  - tag: dns_nocn
-    type: fallback
-    args:
-      primary: cleanbrowsing
-      secondary: quad9
-      threshold: 900
-      always_standby: true
 
   - tag: dns_cn
     type: fallback
@@ -72,30 +63,8 @@ plugins:
       threshold: 300
       always_standby: true
 
-  ################# 执行策略 ################
-  - tag: main_sequence
-    type: sequence
-    args:
-      - exec: $cache_wan
-      - matches: has_resp
-        exec: return
-      - exec: $ecs
-      - exec: $dns_cn_seq
-
-  - tag: sequence
-    type: sequence
-    args:
-      - exec: $main_sequence
-
-  # 增加一个接口用于接收用户请求并转发给 dns_nocn 和 dns_cn 处理
-  - tag: user_request_handler
-    type: sequence
-    args:
-      - exec: $ecs
-      - exec: $dns_cn_seq
-
   # 在同一端口启动 udp 和 tcp 服务器。
   - type: udp_server
     args:
-      entry: user_request_handler
+      entry: dns_cn
       listen: :53
