@@ -90,18 +90,16 @@ plugins:
         - addr: "udp://180.184.1.1"
         - addr: "udp://180.184.2.2"
 
-  - tag: quad9opendns
+  - tag: quad9
     type: forward
     args:
-      concurrent: 3
+      concurrent: 2
       upstreams:
-        - addr: "https://dns9.quad9.net/dns-query"
+        - addr: "tls://dns11.quad9.net"
           bootstrap: "223.5.5.5"
-        - addr: "https://dns9.quad9.net/dns-query"
+        - addr: "tls://dns11.quad9.net"
           bootstrap: "2400:3200::1"
-        - addr: "https://doh.opendns.com/dns-query"
-          bootstrap: "119.29.29.29"
-        - addr: "https://dns9.quad9.net/dns-query"
+        - addr: "tls://dns11.quad9.net"
           bootstrap: "2400:3200:baba::1"
 
   - tag: cleanbrowsing
@@ -109,20 +107,20 @@ plugins:
     args:
       concurrent: 3
       upstreams:
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+        - addr: "tls://family-filter-dns.cleanbrowsing.org"
           bootstrap: "101.226.4.6"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+        - addr: "tls://family-filter-dns.cleanbrowsing.org"
           bootstrap: "180.184.1.1"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+        - addr: "tls://family-filter-dns.cleanbrowsing.org"
           bootstrap: "2400:3200::1"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+        - addr: "tls://family-filter-dns.cleanbrowsing.org"
           bootstrap: "2400:3200:baba::1"
 
   ################# DNS #################
   - tag: dns_nocn
     type: fallback
     args:
-      primary: quad9opendns
+      primary: quad9
       secondary: cleanbrowsing
       threshold: 700
       always_standby: true
