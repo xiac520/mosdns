@@ -69,7 +69,7 @@ plugins:
   - tag: alidnsdnspod
     type: forward
     args:
-      concurrent: 2  # 减少并发查询数
+      concurrent: 3  # 减少并发查询数
       upstreams:
         - addr: "udp://223.5.5.5"
         - addr: "udp://223.6.6.6"
@@ -95,26 +95,19 @@ plugins:
     args:
       concurrent: 2  # 减少并发查询数
       upstreams:
-        - addr: "https://dns10.quad9.net/dns-query"
-          dial_addr: "9.9.9.10"
-        - addr: "https://dns10.quad9.net/dns-query"
-          dial_addr: "149.112.112.10"
-        - addr: "https://dns10.quad9.net/dns-query"
-          dial_addr: "2620:fe::10"
+        - addr: "udp://9.9.9.10"
+        - addr: "udp://149.112.112.10"
+        - addr: "udp://2620:fe::10"
 
   - tag: cleanbrowsing
     type: forward
     args:
-      concurrent: 2  # 减少并发查询数
+      concurrent: 3  # 减少并发查询数
       upstreams:
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
-          dial_addr: "185.228.168.168"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
-          dial_addr: "185.228.169.168"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
-          dial_addr: "2400:3200::1"
-        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
-          dial_addr: "2400:3200:baba::1"
+        - addr: "udp://185.228.168.168"
+        - addr: "udp://185.228.169.168"
+        - addr: "udp://2a0d:2a00:1::"
+        - addr: "udp://2a0d:2a00:2::"
 
   ################# DNS #################
   - tag: dns_nocn
