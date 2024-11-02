@@ -3,20 +3,22 @@ plugins:
 - tag: dns_nocn
   type: fallback
   args:
-    primary: quad9
-    secondary: opendns
+    primary: quad9opendns
+    secondary: verisign
     threshold: 400
     always_standby: true
 
+plugins:
 - tag: dns_cn
   type: fallback
   args:
-    primary: alidns
-    secondary: dnspod
+    primary: alidnsdnspod
+    secondary: 360trafficroute
     threshold: 100
     always_standby: true
 
-- tag: alidns
+plugins:
+- tag: alidnsdnspod
   type: forward
   args:
     concurrent: 3
@@ -25,16 +27,11 @@ plugins:
       - addr: 'udp://223.6.6.6:53'
       - addr: 'udp://2400:3200::1:53'
       - addr: 'udp://2400:3200:baba::1:53'
-
-- tag: dnspod
-  type: forward
-  args:
-    concurrent: 3
-    upstreams:
       - addr: 'udp://119.29.29.29:53'
       - addr: 'udp://119.28.28.28:53'
 
-- tag: 360
+plugins:
+- tag: 360trafficroute
   type: forward
   args:
     concurrent: 3
@@ -43,16 +40,11 @@ plugins:
       - addr: 'udp://123.125.81.6:53'
       - addr: 'udp://218.30.118.6:53'
       - addr: 'udp://140.207.198.6:53'
-
-- tag: trafficroute
-  type: forward
-  args:
-    concurrent: 3
-    upstreams:
       - addr: 'udp://180.184.1.1:53'
       - addr: 'udp://180.184.2.2:53'
 
-- tag: quad9
+plugins:
+- tag: quad9opendns
   type: forward
   args:
     concurrent: 3
@@ -61,17 +53,12 @@ plugins:
         dial_addr: 149.112.112.9
       - addr: 'https://dns9.quad9.net/dns-query'
         dial_addr: '2620:fe::fe:9'
-
-- tag: opendns
-  type: forward
-  args:
-    concurrent: 3
-    upstreams:
       - addr: 'https://doh.opendns.com/dns-query'
         dial_addr: 208.67.220.222
       - addr: 'https://dns9.quad9.net/dns-query'
         dial_addr: '2620:119:53::53'
 
+plugins:
 - tag: verisign
   type: forward
   args:
@@ -86,6 +73,7 @@ plugins:
       - addr: 'https://dns.verisign.com/dns-query'
         dial_addr: '2620:74:1b::1:1'
 
+plugins:
 ################## 数据源 ################
 - tag: geoip_cn
   type: ip_set
@@ -117,6 +105,7 @@ plugins:
     files:
       - /etc/mosdns/rules/geosite_category-ads-all.txt
 
+plugins:
 ################# 可执行插件 ################
 - tag: cache_lan
   type: cache
@@ -124,12 +113,14 @@ plugins:
     size: 8192
     lazy_cache_ttl: 86400
 
+plugins:
 - tag: cache_wan
   type: cache
   args:
     size: 131072
     lazy_cache_ttl: 86400
 
+plugins:
 - tag: ecs
   type: ecs_handler
   args:
@@ -139,6 +130,7 @@ plugins:
     mask4: 24
     mask6: 48
 
+plugins:
 - tag: ttl_1m
   type: sequence
   args:
@@ -154,6 +146,7 @@ plugins:
   args:
     - exec: ttl 3600
 
+plugins:
 ################# 执行策略 ################
 - tag: reject_null_domain
   type: sequence
@@ -277,3 +270,13 @@ plugins:
   args:
     - matches: has_resp
       exec: goto main_handle
+
+  # 在同一端口启动 udp 和 tcp 服务器。
+  - type: udp_server
+    args:
+      entry: sequence
+      listen: :53
+  - type: tcp_server
+    args:
+      entry: sequence
+      listen: :53
