@@ -2,8 +2,8 @@
   - tag: dns_nocn
     type: "fallback"
     args:
-      primary: "verisign" # 主dns
-      secondary: "quad9,opendns" # 备用dns
+      primary: verisign # 主dns
+      secondary: quad9 # 备用dns
       threshold: 400 # 无响应切换 毫秒
       always_standby: true # 副可执行插件始终待命
   
@@ -11,8 +11,8 @@
   - tag: dns_cn
     type: "fallback"
     args:
-      primary: "alidns" # 主dns
-      secondary: "dnspod,360,trafficroute" # 备用dns
+      primary: alidns # 主dns
+      secondary: dnspod # 备用dns
       threshold: 100
       always_standby: true # 副可执行插件始终待命
 
