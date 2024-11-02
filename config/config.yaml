@@ -55,16 +55,33 @@ plugins:
       mask4: 24
       mask6: 48
 
+  ################# DNS #################
+  - tag: dns_nocn
+    type: fallback
+    args:
+      primary: cleanbrowsing
+      secondary: quad9
+      threshold: 500
+      always_standby: true
+
   - tag: dns_cn
     type: fallback
     args:
       primary: alidnsdnspod
       secondary: trafficroute
-      threshold: 300
+      threshold: 200
+      always_standby: true
+
+  - tag: dns
+    type: fallback
+    args:
+      primary: dns_cn
+      secondary: dns_nocn
+      threshold: 200
       always_standby: true
 
   # 在同一端口启动 udp 和 tcp 服务器。
   - type: udp_server
     args:
-      entry: dns_cn
+      entry: dns
       listen: :53
