@@ -236,6 +236,24 @@ plugins:
       - matches: has_resp
         exec: goto main_handle
 
+  - tag: reject_null_domain
+    type: sequence
+    args:
+      - exec: query_summary reject_null_domain
+      - exec: $reject_3
+
+  - tag: reject_qtype65
+    type: sequence
+    args:
+      - exec: query_summary reject_qtype65
+      - exec: $reject_3
+
+  - tag: reject_ad
+    type: sequence
+    args:
+      - exec: query_summary reject_adlist
+      - exec: $reject_3
+
   # pre_sequence
   - tag: pre_sequence
     type: sequence
