@@ -18,7 +18,7 @@ plugins:
   - tag: ecs
     type: ecs_handler
     args:
-      forward: true
+      forward: false
       preset: 45.207.213.35
       send: false
       mask4: 24
@@ -70,7 +70,6 @@ plugins:
     type: forward
     args:
       concurrent: 2  # 减少并发查询数
-      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "udp://223.5.5.5"
         - addr: "udp://223.6.6.6"
@@ -83,7 +82,6 @@ plugins:
     type: forward
     args:
       concurrent: 2  # 减少并发查询数
-      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "udp://101.226.4.6"
         - addr: "udp://123.125.81.6"
@@ -96,7 +94,6 @@ plugins:
     type: forward
     args:
       concurrent: 2  # 减少并发查询数
-      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "https://dns10.quad9.net/dns-query"
           dial_addr: "9.9.9.10"
@@ -109,7 +106,6 @@ plugins:
     type: forward
     args:
       concurrent: 2  # 减少并发查询数
-      timeout: 10s  # 增加超时时间
       upstreams:
         - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           dial_addr: "185.228.168.168"
@@ -298,10 +294,6 @@ plugins:
 
   # 在同一端口启动 udp 和 tcp 服务器。
   - type: udp_server
-    args:
-      entry: sequence
-      listen: :53
-  - type: tcp_server
     args:
       entry: sequence
       listen: :53
