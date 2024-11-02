@@ -283,7 +283,7 @@ plugins:
         exec: $query_nocn
       - exec: jump has_resp_main
       # 其他
-      - exec: $no_ecs
+      - exec: $ecs
       - exec: $query_fallback
       - exec: jump has_resp_main
 
