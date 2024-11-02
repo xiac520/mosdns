@@ -253,6 +253,7 @@ plugins:
     - matches: has_resp
       exec: goto pre_handle
 
+  # main_sequence 结果处理
 - tag: has_resp_main
   type: sequence
   args:
