@@ -18,7 +18,7 @@ plugins:
   - tag: ecs
     type: ecs_handler
     args:
-      forward: true
+      forward: false
       preset: 45.207.213.35
       send: false
       mask4: 24
