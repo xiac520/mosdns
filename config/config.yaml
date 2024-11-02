@@ -108,9 +108,9 @@ plugins:
       concurrent: 3
       upstreams:
         - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "101.226.4.6"
+          bootstrap: "223.5.5.5"
         - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "180.184.1.1"
+          bootstrap: "119.29.29.29"
         - addr: "tls://family-filter-dns.cleanbrowsing.org"
           bootstrap: "2400:3200::1"
         - addr: "tls://family-filter-dns.cleanbrowsing.org"
