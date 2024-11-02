@@ -1,18 +1,25 @@
+include:
+  - "/etc/mosdns/dat_exec.yaml"
+  - "/etc/mosdns/dns.yaml"
+
 plugins:
   - tag: reject_null_domain
     type: sequence
     args:
       - exec: query_summary reject_null_domain
+      - exec: $reject_3
 
   - tag: reject_qtype65
     type: sequence
     args:
       - exec: query_summary reject_qtype65
+      - exec: $reject_3
 
   - tag: reject_ad
     type: sequence
     args:
       - exec: query_summary reject_adlist
+      - exec: $reject_3
 
   ################ 序列 #################
   - tag: dns_nocn
@@ -149,6 +156,9 @@ plugins:
         exec: $query_other
       - matches: qtype 255 # TYPE 255 类型|DNS服务器拓展支持
         exec: $query_other
+      - matches: ptr_ip $geoip_private # private ip
+        exec: $query_lan
+      - exec: jump has_resp_pre
 
   # main_sequence
   - tag: main_sequence
@@ -184,8 +194,8 @@ plugins:
   - type: udp_server
     args:
       entry: sequence
-      listen: :53
+      listen: :5333
   - type: tcp_server
     args:
       entry: sequence
-      listen: :53
+      listen: :5333
