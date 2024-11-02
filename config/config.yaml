@@ -35,7 +35,7 @@ plugins:
 
   ################# DNS #################
   - tag: dns_cn
-    type: forward
+    type: fallback
     args:
       primary: alidnsdnspod
       secondary: trafficroute
