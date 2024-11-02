@@ -92,6 +92,12 @@ plugins:
           dial_addr: "2620:fe::11"
           enable_pipeline: true
 
+  - tag: forward_remote
+    type: forward
+    args:
+      concurrent: 1
+      upstreams:
+        - addr: 127.0.0.1:7874 
   # ali doh dot h3
   - tag: ali
     type: forward
