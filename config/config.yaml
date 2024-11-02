@@ -120,9 +120,9 @@ plugins:
   - tag: dns_nocn
     type: fallback
     args:
-      primary: quad9
-      secondary: cleanbrowsing
-      threshold: 700
+      primary: cleanbrowsing
+      secondary: quad9
+      threshold: 900
       always_standby: true
 
   - tag: dns_cn
