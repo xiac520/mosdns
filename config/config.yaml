@@ -18,7 +18,7 @@ plugins:
   - tag: ecs
     type: ecs_handler
     args:
-      forward: false
+      forward: true
       preset: 45.207.213.35
       send: false
       mask4: 24
@@ -95,26 +95,26 @@ plugins:
     args:
       concurrent: 2
       upstreams:
+        - addr: "https://dns10.quad9.net/dns-query"
+          dial_addr: "9.9.9.10"
+        - addr: "https://dns10.quad9.net/dns-query"
+          dial_addr: "149.112.112.10"
         - addr: "tls://dns11.quad9.net"
-          bootstrap: "223.5.5.5"
-        - addr: "tls://dns11.quad9.net"
-          bootstrap: "2400:3200::1"
-        - addr: "tls://dns11.quad9.net"
-          bootstrap: "2400:3200:baba::1"
+          dial_addr: "2620:fe::10"
 
   - tag: cleanbrowsing
     type: forward
     args:
       concurrent: 3
       upstreams:
-        - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "223.5.5.5"
-        - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "119.29.29.29"
-        - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "2400:3200::1"
-        - addr: "tls://family-filter-dns.cleanbrowsing.org"
-          bootstrap: "2400:3200:baba::1"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+          dial_addr: "185.228.168.168"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+          dial_addr: "185.228.169.168"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+          dial_addr: "2400:3200::1"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
+          dial_addr: "2400:3200:baba::1"
 
   ################# DNS #################
   - tag: dns_nocn
