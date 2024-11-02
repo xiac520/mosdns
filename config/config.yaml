@@ -104,18 +104,18 @@ plugins:
         - addr: "https://dns9.quad9.net/dns-query"
           bootstrap: "2400:3200:baba::1"
 
-  - tag: verisign
+  - tag: cleanbrowsing
     type: forward
     args:
       concurrent: 3
       upstreams:
-        - addr: "https://dns.verisign.com/dns-query"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           bootstrap: "101.226.4.6"
-        - addr: "https://dns.verisign.com/dns-query"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           bootstrap: "180.184.1.1"
-        - addr: "https://dns.verisign.com/dns-query"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           bootstrap: "2400:3200::1"
-        - addr: "https://dns.verisign.com/dns-query"
+        - addr: "https://doh.cleanbrowsing.org/doh/family-filter/"
           bootstrap: "2400:3200:baba::1"
 
   ################# DNS #################
@@ -123,7 +123,7 @@ plugins:
     type: fallback
     args:
       primary: quad9opendns
-      secondary: verisign
+      secondary: cleanbrowsing
       threshold: 700
       always_standby: true
 
@@ -132,7 +132,7 @@ plugins:
     args:
       primary: alidnsdnspod
       secondary: 360trafficroute
-      threshold: 200
+      threshold: 300
       always_standby: true
 
   ################# 执行策略 ################
