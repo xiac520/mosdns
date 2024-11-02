@@ -263,9 +263,6 @@ plugins:
         exec: $query_other
       - matches: qtype 255 # TYPE 255 类型|DNS服务器拓展支持
         exec: $query_other
-      - matches: ptr_ip $geoip_private # private ip
-        exec: $query_lan
-      - exec: jump has_resp_pre
 
   # main_sequence
   - tag: main_sequence
