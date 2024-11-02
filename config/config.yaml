@@ -1,3 +1,4 @@
+################ DNS #################
 - tag: dns_nocn
   type: fallback
   args:
@@ -5,6 +6,7 @@
     secondary: verisign
     threshold: 400
     always_standby: true
+
 - tag: dns_cn
   type: fallback
   args:
@@ -12,6 +14,7 @@
     secondary: 360+trafficroute
     threshold: 100
     always_standby: true
+
 - tag: alidns+dnspod
   type: forward
   args:
@@ -23,6 +26,7 @@
       - addr: 'udp://2400:3200:baba::1:53'
       - addr: 'udp://119.29.29.29:53'
       - addr: 'udp://119.28.28.28:53'
+
 - tag: 360+trafficroute
   type: forward
   args:
@@ -34,6 +38,7 @@
       - addr: 'udp://140.207.198.6:53'
       - addr: 'udp://180.184.1.1:53'
       - addr: 'udp://180.184.2.2:53'
+
 - tag: quad9+opendns
   type: forward
   args:
@@ -47,6 +52,7 @@
         dial_addr: 208.67.220.222
       - addr: 'https://dns9.quad9.net/dns-query'
         dial_addr: '2620:119:53::53'
+
 - tag: verisign
   type: forward
   args:
@@ -60,41 +66,51 @@
         dial_addr: '2620:74:1c::2:2'
       - addr: 'https://dns.verisign.com/dns-query'
         dial_addr: '2620:74:1b::1:1'
+
+################## 数据源 ################
 - tag: geoip_cn
   type: ip_set
   args:
     files:
       - /etc/mosdns/rules/geoip_cn.txt
+
 - tag: geosite_cn
   type: domain_set
   args:
     files:
       - /etc/mosdns/rules/geosite_cn.txt
+
 - tag: geosite_gfw
   type: domain_set
   args:
     files:
       - /etc/mosdns/rules/geosite_gfw.txt
+
 - tag: geosite_location-!cn
   type: domain_set
   args:
     files:
       - /etc/mosdns/rules/geosite_geolocation-!cn.txt
+
 - tag: geosite_ads-all
   type: domain_set
   args:
     files:
       - /etc/mosdns/rules/geosite_category-ads-all.txt
+
+################# 可执行插件 ################
 - tag: cache_lan
   type: cache
   args:
     size: 8192
     lazy_cache_ttl: 86400
+
 - tag: cache_wan
   type: cache
   args:
     size: 131072
     lazy_cache_ttl: 86400
+
 - tag: ecs
   type: ecs_handler
   args:
@@ -103,64 +119,78 @@
     send: false
     mask4: 24
     mask6: 48
+
 - tag: ttl_1m
   type: sequence
   args:
     - exec: ttl 60
+
 - tag: ttl_5m
   type: sequence
   args:
     - exec: ttl 300
+
 - tag: ttl_1h
   type: sequence
   args:
     - exec: ttl 3600
+
+################# 执行策略 ################
 - tag: reject_null_domain
   type: sequence
   args:
     - exec: query_summary reject_null_domain
     - exec: $reject_3
+
 - tag: reject_qtype65
   type: sequence
   args:
     - exec: query_summary reject_qtype65
     - exec: $reject_3
+
 - tag: reject_ad
   type: sequence
   args:
     - exec: query_summary reject_adlist
     - exec: $reject_3
+
 - tag: dns_nocn_seq
   type: sequence
   args:
     - exec: query_summary dns_nocn
     - exec: $dns_nocn
+
 - tag: dns_cn_seq
   type: sequence
   args:
     - exec: query_summary dns_cn
     - exec: $dns_cn
+
 - tag: local_seq
   type: sequence
   args:
     - exec: query_summary dns_cn
     - exec: $dns_cn
+
 - tag: fallback_seq
   type: sequence
   args:
     - exec: query_summary fallback
     - exec: $dns_cn
+
 - tag: other_seq
   type: sequence
   args:
     - exec: query_summary other
     - exec: $dns_cn
+
 - tag: sequence
   type: sequence
   args:
     - exec: metrics_collector metrics
     - exec: $pre_sequence
     - exec: $main_sequence
+
 - tag: query_cn
   type: sequence
   args:
@@ -168,6 +198,7 @@
     - exec: $dns_cn_seq
     - matches: '!resp_ip $geoip_cn'
       exec: drop_resp
+
 - tag: query_nocn
   type: sequence
   args:
@@ -176,16 +207,19 @@
     - exec: $dns_nocn_seq
     - matches: resp_ip $geoip_cn
       exec: drop_resp
+
 - tag: query_gfw
   type: sequence
   args:
     - exec: $dns_nocn
+
 - tag: query_fallback
   type: sequence
   args:
     - exec: $ecs
     - exec: prefer_ipv4
     - exec: $fallback_seq
+
 - tag: query_lan
   type: sequence
   args:
@@ -194,26 +228,31 @@
       exec: return
     - exec: $ecs
     - exec: $local_seq
+
 - tag: query_other
   type: sequence
   args:
     - exec: $ecs
     - exec: $other_seq
+
 - tag: pre_handle
   type: sequence
   args:
     - exec: $ttl_1h
     - exec: accept
+
 - tag: main_handle
   type: sequence
   args:
     - exec: $ttl_5m
     - exec: accept
+
 - tag: has_resp_pre
   type: sequence
   args:
     - matches: has_resp
       exec: goto pre_handle
+
 - tag: has_resp_main
   type: sequence
   args:
