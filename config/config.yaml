@@ -54,8 +54,8 @@ plugins:
   - tag: local_seq
     type: sequence
     args:
-      - exec: query_summary nextdns
-      - exec: $nextdns
+      - exec: query_summary local
+      - exec: $dns_cn
 
   - tag: fallback_seq # 其他特殊情况统一使用 dns_cn 处理
     type: sequence
@@ -91,7 +91,7 @@ plugins:
   - tag: query_gfw
     type: sequence
     args:
-      - exec: $forward_remote
+      - exec: $dns_nocn
 
   # query fallback
   - tag: query_fallback
